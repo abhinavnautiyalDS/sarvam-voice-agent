@@ -2,7 +2,12 @@ import os
 
 import httpx
 import streamlit as st
-from streamlit_webrtc import WebRtcMode, webrtc_streamer
+from streamlit_webrtc import (
+    WebRtcMode,
+    create_audio_sink_track,
+    create_pcm_audio_source_track,
+    webrtc_streamer,
+)
 
 from cloud_voice import CloudVoiceAgent
 
@@ -57,9 +62,25 @@ agent = st.session_state.cloud_agent
 if st.session_state.running and agent is not None:
     st.success("Agent is running. Allow microphone access, then speak Hindi/Hinglish.")
 
-    def audio_callback(frame):
+    # Realtime voice uses independent input/output WebRTC tracks.
+    # The sink receives every browser audio frame without tying input
+    # processing to the timing of the speaker output.
+    pcm_output = create_pcm_audio_source_track(
+        key="sarvam_voice_output",
+        sample_rate=24000,
+        ptime=0.020,
+    )
+
+    # Keep the same output source across Streamlit reruns.
+    agent.output_source = pcm_output
+
+    def audio_sink_callback(frame):
         agent.ingest_webrtc_frame(frame)
-        return agent.get_output_frame(frame)
+
+    audio_sink = create_audio_sink_track(
+        callback=audio_sink_callback,
+        key="sarvam_voice_input",
+    )
 
     hf_token = st.secrets.get("HF_TOKEN", os.getenv("HF_TOKEN", ""))
     ice_servers = []
@@ -72,14 +93,14 @@ if st.session_state.running and agent is not None:
                 f"HF TURN unavailable ({exc}). Falling back to Google STUN."
             )
 
-    # STUN works on many networks; HF TURN is added when available.
     ice_servers.append({"urls": "stun:stun.l.google.com:19302"})
     rtc_config = {"iceServers": ice_servers}
 
     webrtc_streamer(
-        key="sarvam-voice-hf-v2",
+        key="sarvam-voice-hf-v3",
         mode=WebRtcMode.SENDRECV,
-        audio_frame_callback=audio_callback,
+        sink_audio_track=audio_sink,
+        source_audio_track=pcm_output.track,
         media_stream_constraints={
             "audio": {
                 "echoCancellation": True,
@@ -90,7 +111,6 @@ if st.session_state.running and agent is not None:
         },
         frontend_rtc_configuration=rtc_config,
         server_rtc_configuration=rtc_config,
-        async_processing=True,
     )
 
     if len(ice_servers) > 1:
@@ -115,15 +135,22 @@ if st.session_state.running and agent is not None:
         st.write(f"**Agent:** {agent.last_assistant_text}")
 
     st.caption(
-        "Allow microphone access when the browser asks. "
-        "Use headphones if you hear echo."
+        "Input: browser mic → audio sink → Saaras. "
+        "Output: BakBak PCM → audio source → browser speaker."
     )
 
     if st.button("Stop voice agent", use_container_width=True):
         agent.stop()
+        try:
+            pcm_output.clear()
+            pcm_output.track.stop()
+            audio_sink.stop()
+        except Exception:
+            pass
         st.session_state.cloud_agent = None
         st.session_state.running = False
         st.rerun()
+
 else:
     st.info("Click Start voice agent, then allow microphone access.")
 
