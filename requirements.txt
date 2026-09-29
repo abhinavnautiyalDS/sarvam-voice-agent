@@ -1,0 +1,6 @@
+streamlit
+streamlit-webrtc
+pipecat-ai[sarvam]==1.12.0
+httpx
+python-dotenv
+numpy
