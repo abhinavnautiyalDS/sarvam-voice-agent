@@ -3,7 +3,6 @@ import base64
 import json
 import queue
 import threading
-import time
 import urllib.parse
 
 import av
@@ -13,11 +12,7 @@ import websockets
 
 
 class CloudVoiceAgent:
-    """Bridge browser audio to Sarvam STT/LLM and BakBak TTS.
-
-    The WebRTC callback stays lightweight. Network work runs in this
-    background thread so Streamlit's media thread is never blocked.
-    """
+    """Bridge browser WebRTC audio to Sarvam STT/LLM and BakBak TTS."""
 
     def __init__(self, sarvam_api_key: str, bakbak_api_key: str, bakbak_voice_id: str):
         self.sarvam_api_key = sarvam_api_key
@@ -25,7 +20,6 @@ class CloudVoiceAgent:
         self.bakbak_voice_id = bakbak_voice_id
 
         self.audio_in = queue.Queue(maxsize=100)
-        self.audio_out = queue.Queue(maxsize=100)
         self.running = False
         self.thread = None
 
@@ -49,26 +43,16 @@ class CloudVoiceAgent:
             self.thread.join(timeout=2)
         self.thread = None
 
-        while not self.audio_in.empty():
-            try:
-                self.audio_in.get_nowait()
-            except queue.Empty:
-                break
-
     def push_audio(self, pcm16_mono_16k: bytes):
         if not self.running:
             return
         try:
             self.audio_in.put_nowait(pcm16_mono_16k)
         except queue.Full:
-            # Drop the oldest audio rather than blocking the WebRTC callback.
             try:
                 self.audio_in.get_nowait()
-            except queue.Empty:
-                pass
-            try:
                 self.audio_in.put_nowait(pcm16_mono_16k)
-            except queue.Full:
+            except queue.Empty:
                 pass
 
     def _run_thread(self):
@@ -123,14 +107,10 @@ class CloudVoiceAgent:
             except queue.Empty:
                 continue
 
-            await ws.send(
-                json.dumps(
-                    {
-                        "event": "audio_input",
-                        "audio": base64.b64encode(chunk).decode("utf-8"),
-                    }
-                )
-            )
+            await ws.send(json.dumps({
+                "event": "audio_input",
+                "audio": base64.b64encode(chunk).decode("utf-8"),
+            }))
 
     async def _receive_stt(self, ws):
         async for raw in ws:
@@ -153,8 +133,9 @@ class CloudVoiceAgent:
                 self._enqueue_output(audio)
 
             elif event_type == "error":
-                message = event.get("message", "Sarvam realtime STT error")
-                raise RuntimeError(message)
+                raise RuntimeError(
+                    event.get("message", "Sarvam realtime STT error")
+                )
 
     async def _get_llm_response(self, user_text: str) -> str:
         url = "https://api.sarvam.ai/v1/chat/completions"
@@ -207,11 +188,7 @@ class CloudVoiceAgent:
             response.raise_for_status()
             audio = response.content
 
-        if audio[:4] == b"RIFF":
-            # Standard 44-byte WAV header for the current BakBak baseline.
-            audio = audio[44:]
-
-        return audio
+        return audio[44:] if audio[:4] == b"RIFF" else audio
 
     def _enqueue_output(self, pcm16_24k: bytes):
         samples = np.frombuffer(pcm16_24k, dtype=np.int16)
@@ -221,55 +198,76 @@ class CloudVoiceAgent:
             )
 
     def get_output_frame(self, input_frame: av.AudioFrame) -> av.AudioFrame:
-        """Return TTS audio matching the browser's incoming frame format."""
+        """Return a TTS frame with the same timing/rate as the browser track."""
         sample_rate = input_frame.sample_rate
         samples_needed = input_frame.samples
         channels = len(input_frame.layout.channels)
 
+        # Consume the correct amount of 24 kHz source audio for this output
+        # duration. Example: a 48 kHz browser frame needs twice as many source
+        # samples before resampling.
+        source_needed = max(
+            1, round(samples_needed * 24000 / sample_rate)
+        )
+
         with self._output_lock:
-            if len(self._output_buffer) >= samples_needed:
-                mono = self._output_buffer[:samples_needed]
-                self._output_buffer = self._output_buffer[samples_needed:]
+            if len(self._output_buffer) >= source_needed:
+                source_samples = self._output_buffer[:source_needed]
+                self._output_buffer = self._output_buffer[source_needed:]
             else:
-                mono = np.zeros(samples_needed, dtype=np.int16)
+                source_samples = np.zeros(source_needed, dtype=np.int16)
                 if len(self._output_buffer):
-                    mono[: len(self._output_buffer)] = self._output_buffer
+                    source_samples[: len(self._output_buffer)] = self._output_buffer
                     self._output_buffer = np.zeros(0, dtype=np.int16)
 
-        # BakBak is 24 kHz. Resample to the browser's current rate.
         if sample_rate != 24000:
             source = av.AudioFrame.from_ndarray(
-                mono.reshape(1, -1), format="s16", layout="mono"
+                source_samples.reshape(1, -1),
+                format="s16",
+                layout="mono",
             )
             source.sample_rate = 24000
             resampler = av.AudioResampler(
-                format="s16", layout="mono", rate=sample_rate
+                format="s16",
+                layout="mono",
+                rate=sample_rate,
             )
             converted = resampler.resample(source)
-            if converted:
-                arr = converted[0].to_ndarray()
-                mono = np.asarray(arr).reshape(-1).astype(np.int16)
-                if len(mono) < samples_needed:
-                    mono = np.pad(mono, (0, samples_needed - len(mono)))
-                else:
-                    mono = mono[:samples_needed]
+            mono = (
+                converted[0].to_ndarray().reshape(-1).astype(np.int16)
+                if converted
+                else np.zeros(samples_needed, dtype=np.int16)
+            )
+        else:
+            mono = source_samples
+
+        if len(mono) < samples_needed:
+            mono = np.pad(mono, (0, samples_needed - len(mono)))
+        else:
+            mono = mono[:samples_needed]
 
         if channels == 1:
             data = mono.reshape(1, -1)
             layout = "mono"
+        elif channels == 2:
+            data = np.tile(mono, (2, 1))
+            layout = "stereo"
         else:
             data = np.tile(mono, (channels, 1))
-            layout = "stereo" if channels == 2 else input_frame.layout.name
+            layout = input_frame.layout.name
 
         out = av.AudioFrame.from_ndarray(data, format="s16", layout=layout)
         out.sample_rate = sample_rate
         return out
 
     def ingest_webrtc_frame(self, frame: av.AudioFrame):
-        """Convert browser audio to mono 16 kHz signed PCM."""
-        resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
-        converted = resampler.resample(frame)
+        """Convert browser audio to mono 16 kHz signed PCM for Saaras."""
+        resampler = av.AudioResampler(
+            format="s16",
+            layout="mono",
+            rate=16000,
+        )
 
-        for out in converted:
-            pcm = out.to_ndarray().astype(np.int16).tobytes()
+        for converted in resampler.resample(frame):
+            pcm = converted.to_ndarray().astype(np.int16).tobytes()
             self.push_audio(pcm)
