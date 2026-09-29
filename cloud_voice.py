@@ -14,10 +14,17 @@ import websockets
 class CloudVoiceAgent:
     """Bridge browser WebRTC audio to Sarvam STT/LLM and BakBak TTS."""
 
-    def __init__(self, sarvam_api_key: str, bakbak_api_key: str, bakbak_voice_id: str):
+    def __init__(
+        self,
+        sarvam_api_key: str,
+        bakbak_api_key: str,
+        bakbak_voice_id: str,
+        output_source=None,
+    ):
         self.sarvam_api_key = sarvam_api_key
         self.bakbak_api_key = bakbak_api_key
         self.bakbak_voice_id = bakbak_voice_id
+        self.output_source = output_source
 
         self.audio_in = queue.Queue(maxsize=100)
         self.running = False
@@ -260,111 +267,14 @@ class CloudVoiceAgent:
         return audio[44:] if audio[:4] == b"RIFF" else audio
 
     def _enqueue_output(self, pcm16_24k: bytes):
+        """Push 24 kHz mono PCM into streamlit-webrtc's PcmAudioSource."""
         if len(pcm16_24k) % 2:
             raise ValueError("BakBak returned an odd-length PCM payload")
 
-        samples = np.frombuffer(
-            pcm16_24k,
-            dtype=np.int16,
-        )
+        if self.output_source is None:
+            raise RuntimeError("WebRTC output source is not configured")
 
-        with self._output_lock:
-            self._output_buffer = np.concatenate(
-                [
-                    self._output_buffer,
-                    samples,
-                ]
-            )
-
-    def get_output_frame(
-        self,
-        input_frame: av.AudioFrame,
-    ) -> av.AudioFrame:
-        """Return TTS audio with the same timing/rate as the browser track."""
-
-        sample_rate = input_frame.sample_rate
-        samples_needed = input_frame.samples
-        channels = len(input_frame.layout.channels)
-
-        source_needed = max(
-            1,
-            round(samples_needed * 24000 / sample_rate),
-        )
-
-        with self._output_lock:
-            if len(self._output_buffer) >= source_needed:
-                source_samples = self._output_buffer[:source_needed]
-                self._output_buffer = self._output_buffer[source_needed:]
-            else:
-                source_samples = np.zeros(
-                    source_needed,
-                    dtype=np.int16,
-                )
-
-                if len(self._output_buffer):
-                    source_samples[: len(self._output_buffer)] = (
-                        self._output_buffer
-                    )
-                    self._output_buffer = np.zeros(
-                        0,
-                        dtype=np.int16,
-                    )
-
-        if sample_rate != 24000:
-            source = av.AudioFrame.from_ndarray(
-                source_samples.reshape(1, -1),
-                format="s16",
-                layout="mono",
-            )
-            source.sample_rate = 24000
-
-            resampler = av.AudioResampler(
-                format="s16",
-                layout="mono",
-                rate=sample_rate,
-            )
-
-            converted = resampler.resample(source)
-
-            mono = (
-                converted[0]
-                .to_ndarray()
-                .reshape(-1)
-                .astype(np.int16)
-                if converted
-                else np.zeros(
-                    samples_needed,
-                    dtype=np.int16,
-                )
-            )
-        else:
-            mono = source_samples
-
-        if len(mono) < samples_needed:
-            mono = np.pad(
-                mono,
-                (0, samples_needed - len(mono)),
-            )
-        else:
-            mono = mono[:samples_needed]
-
-        if channels == 1:
-            data = mono.reshape(1, -1)
-            layout = "mono"
-        elif channels == 2:
-            data = np.tile(mono, (2, 1))
-            layout = "stereo"
-        else:
-            data = np.tile(mono, (channels, 1))
-            layout = input_frame.layout.name
-
-        out = av.AudioFrame.from_ndarray(
-            data,
-            format="s16",
-            layout=layout,
-        )
-        out.sample_rate = sample_rate
-        return out
+        self.output_source.push(pcm16_24k)
 
     def ingest_webrtc_frame(self, frame: av.AudioFrame):
         """Convert browser audio to mono 16 kHz signed PCM for Saaras."""
