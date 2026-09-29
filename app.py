@@ -1,8 +1,8 @@
 import os
 
+import httpx
 import streamlit as st
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
-from streamlit_webrtc.credentials import get_hf_ice_servers
 
 from cloud_voice import CloudVoiceAgent
 
@@ -38,6 +38,20 @@ if st.button(
         st.error(f"Could not start: {exc}")
 
 
+@st.cache_data(ttl=300)
+def get_hf_turn_servers(token: str):
+    url = "https://fastrtc-turn-service.hf.space/credentials"
+    response = httpx.get(
+        url,
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=10,
+        follow_redirects=True,
+    )
+    response.raise_for_status()
+    data = response.json()
+    return data.get("iceServers", [])
+
+
 agent = st.session_state.cloud_agent
 
 if st.session_state.running and agent is not None:
@@ -47,27 +61,23 @@ if st.session_state.running and agent is not None:
         agent.ingest_webrtc_frame(frame)
         return agent.get_output_frame(frame)
 
-    # Hugging Face provides TURN credentials without requiring the
-    # Cloudflare TURN billing setup. The token stays server-side in
-    # Streamlit secrets.
     hf_token = st.secrets.get("HF_TOKEN", os.getenv("HF_TOKEN", ""))
     ice_servers = []
 
     if hf_token:
         try:
-            ice_servers = get_hf_ice_servers(hf_token)
-            # Add Google's public STUN server as an additional candidate.
-            ice_servers.append({"urls": "stun:stun.l.google.com:19302"})
+            ice_servers = get_hf_turn_servers(hf_token)
         except Exception as exc:
-            st.warning(f"Could not load Hugging Face TURN credentials: {exc}")
+            st.warning(
+                f"HF TURN unavailable ({exc}). Falling back to Google STUN."
+            )
 
-    if not ice_servers:
-        ice_servers = [{"urls": "stun:stun.l.google.com:19302"}]
-
+    # STUN works on many networks; HF TURN is added when available.
+    ice_servers.append({"urls": "stun:stun.l.google.com:19302"})
     rtc_config = {"iceServers": ice_servers}
 
     webrtc_streamer(
-        key="sarvam-voice-hf",
+        key="sarvam-voice-hf-v2",
         mode=WebRtcMode.SENDRECV,
         audio_frame_callback=audio_callback,
         media_stream_constraints={
@@ -83,7 +93,7 @@ if st.session_state.running and agent is not None:
         async_processing=True,
     )
 
-    if hf_token and ice_servers:
+    if len(ice_servers) > 1:
         st.caption("WebRTC ICE: Hugging Face TURN + Google STUN")
     else:
         st.caption("WebRTC ICE: Google STUN fallback")
@@ -120,6 +130,6 @@ st.code(
     language="toml",
 )
 st.caption(
-    "HF_TOKEN is used only by the server to obtain temporary TURN credentials. "
+    "HF_TOKEN is used only to obtain temporary TURN credentials. "
     "Never commit it to GitHub."
 )
