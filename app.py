@@ -1,6 +1,8 @@
+import os
+
 import streamlit as st
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
-from streamlit_webrtc.credentials import get_cloudflare_ice_servers
+from streamlit_webrtc.credentials import get_hf_ice_servers
 
 from cloud_voice import CloudVoiceAgent
 
@@ -45,29 +47,27 @@ if st.session_state.running and agent is not None:
         agent.ingest_webrtc_frame(frame)
         return agent.get_output_frame(frame)
 
-    # Modern streamlit-webrtc uses separate frontend/server ICE configs.
-    # Cloudflare TURN is used when its credentials are present in Streamlit
-    # secrets; otherwise Google STUN is used as a fallback.
-    cloudflare_servers = []
-    if (
-        "CLOUDFLARE_TURN_KEY_ID" in st.secrets
-        and "CLOUDFLARE_TURN_KEY_API_TOKEN" in st.secrets
-    ):
-        try:
-            cloudflare_servers = get_cloudflare_ice_servers(
-                turn_key_id=st.secrets["CLOUDFLARE_TURN_KEY_ID"],
-                turn_key_api_token=st.secrets["CLOUDFLARE_TURN_KEY_API_TOKEN"],
-            )
-        except Exception as exc:
-            st.warning(f"Cloudflare TURN credentials could not be loaded: {exc}")
+    # Hugging Face provides TURN credentials without requiring the
+    # Cloudflare TURN billing setup. The token stays server-side in
+    # Streamlit secrets.
+    hf_token = st.secrets.get("HF_TOKEN", os.getenv("HF_TOKEN", ""))
+    ice_servers = []
 
-    ice_servers = cloudflare_servers or [
-        {"urls": ["stun:stun.l.google.com:19302"]}
-    ]
+    if hf_token:
+        try:
+            ice_servers = get_hf_ice_servers(hf_token)
+            # Add Google's public STUN server as an additional candidate.
+            ice_servers.append({"urls": "stun:stun.l.google.com:19302"})
+        except Exception as exc:
+            st.warning(f"Could not load Hugging Face TURN credentials: {exc}")
+
+    if not ice_servers:
+        ice_servers = [{"urls": "stun:stun.l.google.com:19302"}]
+
     rtc_config = {"iceServers": ice_servers}
 
     webrtc_streamer(
-        key="sarvam-voice-v2",
+        key="sarvam-voice-hf",
         mode=WebRtcMode.SENDRECV,
         audio_frame_callback=audio_callback,
         media_stream_constraints={
@@ -83,13 +83,10 @@ if st.session_state.running and agent is not None:
         async_processing=True,
     )
 
-    if cloudflare_servers:
-        st.caption("WebRTC ICE: Cloudflare STUN/TURN")
+    if hf_token and ice_servers:
+        st.caption("WebRTC ICE: Hugging Face TURN + Google STUN")
     else:
-        st.caption(
-            "WebRTC ICE: Google STUN fallback. Add Cloudflare TURN secrets "
-            "below if the connection does not establish."
-        )
+        st.caption("WebRTC ICE: Google STUN fallback")
 
     if agent.error:
         st.error(f"Voice pipeline error: {agent.error}")
@@ -114,18 +111,15 @@ else:
 
 
 st.divider()
-st.subheader("Required Streamlit secrets")
+st.subheader("Streamlit secrets")
 st.code(
     'SARVAM_API_KEY="..."\n'
     'BAKBAK_API_KEY="..."\n'
     'BAKBAK_VOICE_ID="..."\n'
-    '\n'
-    '# Recommended for Streamlit Cloud WebRTC\n'
-    'CLOUDFLARE_TURN_KEY_ID="..."\n'
-    'CLOUDFLARE_TURN_KEY_API_TOKEN="..."',
+    'HF_TOKEN="hf_..."',
     language="toml",
 )
 st.caption(
-    "Cloudflare TURN is recommended for remote WebRTC deployments. "
-    "Never commit these secrets to GitHub."
+    "HF_TOKEN is used only by the server to obtain temporary TURN credentials. "
+    "Never commit it to GitHub."
 )
