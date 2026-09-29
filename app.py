@@ -34,7 +34,6 @@ if st.button(
 agent = st.session_state.cloud_agent
 
 if st.session_state.running and agent is not None:
-
     st.success("Agent is running. Allow microphone access, then speak Hindi/Hinglish.")
 
     def audio_callback(frame):
@@ -45,7 +44,22 @@ if st.session_state.running and agent is not None:
         key="sarvam-voice",
         mode=WebRtcMode.SENDRECV,
         audio_frame_callback=audio_callback,
-        media_stream_constraints={"audio": True, "video": False},
+        media_stream_constraints={
+            "audio": {
+                "echoCancellation": True,
+                "noiseSuppression": True,
+                "autoGainControl": True,
+            },
+            "video": False,
+        },
+        # A remote Streamlit deployment needs ICE servers for WebRTC
+        # NAT traversal. STUN is enough for many networks; TURN may still
+        # be required on restrictive corporate/mobile networks.
+        rtc_configuration={
+            "iceServers": [
+                {"urls": ["stun:stun.l.google.com:19302"]},
+            ]
+        },
         async_processing=True,
     )
 
@@ -62,7 +76,6 @@ if st.session_state.running and agent is not None:
         st.session_state.cloud_agent = None
         st.session_state.running = False
         st.rerun()
-
 else:
     st.info("Click Start voice agent, then allow microphone access.")
 
