@@ -180,10 +180,20 @@ class CloudVoiceAgent:
                 self.stt_status = "Transcript received — generating response"
 
                 response = await self._get_llm_response(transcript)
+                if not response:
+                    raise RuntimeError(
+                        "Sarvam LLM returned an empty response"
+                    )
+
                 self.last_assistant_text = response
 
                 self.stt_status = "Generating speech with BakBak"
                 audio = await self._get_bakbak_audio(response)
+                if not audio:
+                    raise RuntimeError(
+                        "BakBak returned empty audio"
+                    )
+
                 self._enqueue_output(audio)
 
                 self.stt_status = "Ready"
@@ -207,7 +217,7 @@ class CloudVoiceAgent:
         }
 
         payload = {
-            "model": "sarvam-105b",
+            "model": "sarvam-105b-conversations",
             "messages": [
                 {
                     "role": "system",
@@ -223,7 +233,8 @@ class CloudVoiceAgent:
                     "content": user_text,
                 },
             ],
-            "max_tokens": 150,
+            "max_tokens": 100,
+            "reasoning_effort": None,
         }
 
         async with httpx.AsyncClient(timeout=45) as client:
