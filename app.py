@@ -1,16 +1,20 @@
 import streamlit as st
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
+from streamlit_webrtc.credentials import get_cloudflare_ice_servers
 
 from cloud_voice import CloudVoiceAgent
+
 
 st.set_page_config(page_title="Sarvam Voice Agent", page_icon="🎤")
 st.title("🎤 Sarvam Voice Agent")
 st.caption("Browser Mic → Saaras Realtime → Sarvam 105B → BakBak TTS")
 
+
 if "cloud_agent" not in st.session_state:
     st.session_state.cloud_agent = None
 if "running" not in st.session_state:
     st.session_state.running = False
+
 
 if st.button(
     "Start voice agent",
@@ -31,6 +35,7 @@ if st.button(
     except Exception as exc:
         st.error(f"Could not start: {exc}")
 
+
 agent = st.session_state.cloud_agent
 
 if st.session_state.running and agent is not None:
@@ -40,8 +45,29 @@ if st.session_state.running and agent is not None:
         agent.ingest_webrtc_frame(frame)
         return agent.get_output_frame(frame)
 
+    # Modern streamlit-webrtc uses separate frontend/server ICE configs.
+    # Cloudflare TURN is used when its credentials are present in Streamlit
+    # secrets; otherwise Google STUN is used as a fallback.
+    cloudflare_servers = []
+    if (
+        "CLOUDFLARE_TURN_KEY_ID" in st.secrets
+        and "CLOUDFLARE_TURN_KEY_API_TOKEN" in st.secrets
+    ):
+        try:
+            cloudflare_servers = get_cloudflare_ice_servers(
+                turn_key_id=st.secrets["CLOUDFLARE_TURN_KEY_ID"],
+                turn_key_api_token=st.secrets["CLOUDFLARE_TURN_KEY_API_TOKEN"],
+            )
+        except Exception as exc:
+            st.warning(f"Cloudflare TURN credentials could not be loaded: {exc}")
+
+    ice_servers = cloudflare_servers or [
+        {"urls": ["stun:stun.l.google.com:19302"]}
+    ]
+    rtc_config = {"iceServers": ice_servers}
+
     webrtc_streamer(
-        key="sarvam-voice",
+        key="sarvam-voice-v2",
         mode=WebRtcMode.SENDRECV,
         audio_frame_callback=audio_callback,
         media_stream_constraints={
@@ -52,19 +78,26 @@ if st.session_state.running and agent is not None:
             },
             "video": False,
         },
-        # A remote Streamlit deployment needs ICE servers for WebRTC
-        # NAT traversal. STUN is enough for many networks; TURN may still
-        # be required on restrictive corporate/mobile networks.
-        rtc_configuration={
-            "iceServers": [
-                {"urls": ["stun:stun.l.google.com:19302"]},
-            ]
-        },
+        frontend_rtc_configuration=rtc_config,
+        server_rtc_configuration=rtc_config,
         async_processing=True,
     )
 
+    if cloudflare_servers:
+        st.caption("WebRTC ICE: Cloudflare STUN/TURN")
+    else:
+        st.caption(
+            "WebRTC ICE: Google STUN fallback. Add Cloudflare TURN secrets "
+            "below if the connection does not establish."
+        )
+
     if agent.error:
         st.error(f"Voice pipeline error: {agent.error}")
+
+    if agent.last_user_text:
+        st.write(f"**You:** {agent.last_user_text}")
+    if agent.last_assistant_text:
+        st.write(f"**Agent:** {agent.last_assistant_text}")
 
     st.caption(
         "Allow microphone access when the browser asks. "
@@ -79,15 +112,20 @@ if st.session_state.running and agent is not None:
 else:
     st.info("Click Start voice agent, then allow microphone access.")
 
+
 st.divider()
 st.subheader("Required Streamlit secrets")
 st.code(
     'SARVAM_API_KEY="..."\n'
     'BAKBAK_API_KEY="..."\n'
-    'BAKBAK_VOICE_ID="..."',
+    'BAKBAK_VOICE_ID="..."\n'
+    '\n'
+    '# Recommended for Streamlit Cloud WebRTC\n'
+    'CLOUDFLARE_TURN_KEY_ID="..."\n'
+    'CLOUDFLARE_TURN_KEY_API_TOKEN="..."',
     language="toml",
 )
 st.caption(
-    "The local voice_agent.py remains available for PyAudio testing. "
-    "This app uses browser WebRTC instead."
+    "Cloudflare TURN is recommended for remote WebRTC deployments. "
+    "Never commit these secrets to GitHub."
 )
