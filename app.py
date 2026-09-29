@@ -30,10 +30,16 @@ if st.button(
     use_container_width=True,
 ):
     try:
+        pcm_output = create_pcm_audio_source_track(
+            key="sarvam_voice_output",
+            sample_rate=24000,
+            ptime=0.020,
+        )
         agent = CloudVoiceAgent(
             st.secrets["SARVAM_API_KEY"],
             st.secrets["BAKBAK_API_KEY"],
             st.secrets["BAKBAK_VOICE_ID"],
+            output_source=pcm_output,
         )
         agent.start()
         st.session_state.cloud_agent = agent
