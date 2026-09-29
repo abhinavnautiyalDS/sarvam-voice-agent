@@ -4,3 +4,4 @@ pipecat-ai[sarvam]==1.12.0
 httpx
 python-dotenv
 numpy
+websockets
