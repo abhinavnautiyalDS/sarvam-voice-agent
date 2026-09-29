@@ -101,6 +101,14 @@ if st.session_state.running and agent is not None:
     if agent.error:
         st.error(f"Voice pipeline error: {agent.error}")
 
+    st.write(f"**STT status:** {agent.stt_status}")
+    st.write(
+        f"**Audio:** {agent.audio_frames_received} frames received / "
+        f"{agent.audio_bytes_sent:,} bytes sent to Sarvam"
+    )
+    if agent.last_stt_event:
+        st.caption(f"Last Sarvam event: {agent.last_stt_event}")
+
     if agent.last_user_text:
         st.write(f"**You:** {agent.last_user_text}")
     if agent.last_assistant_text:
