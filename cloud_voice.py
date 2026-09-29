@@ -73,6 +73,8 @@ class CloudVoiceAgent:
                 "threshold": "0.1",
                 "silence_duration_ms": "700",
                 "min_speech_duration_ms": "200",
+                "sample_rate": "16000",
+                "input_audio_codec": "pcm_s16le",
             }
         )
         url = f"wss://api.sarvam.ai/speech-to-text-realtime/ws?{params}"
