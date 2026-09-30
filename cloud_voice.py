@@ -236,7 +236,16 @@ class CloudVoiceAgent:
                 self.last_detected_language = detected_language or "unknown"
 
                 if detected_language not in self.allowed_languages:
-                    response = "I can speak Hindi or English only."
+                    allowed_names = {
+                        "hi-IN": "Hindi",
+                        "en-IN": "English",
+                        "te-IN": "Telugu",
+                    }
+                    allowed_text = " or ".join(
+                        allowed_names.get(code, code)
+                        for code in (self.primary_language, self.secondary_language)
+                    )
+                    response = f"I can speak {allowed_text} only."
                     tts_language = "en"
                 else:
                     self.llm_status = "Generating response"
@@ -253,10 +262,11 @@ class CloudVoiceAgent:
                         self.pipeline_status = "LLM failed"
                         continue
 
-                    tts_language = (
-                        "hi" if detected_language == "hi-IN"
-                        else "en"
-                    )
+                    tts_language = {
+                        "hi-IN": "hi",
+                        "en-IN": "en",
+                        "te-IN": "te",
+                    }.get(detected_language, "en")
 
                 if not response:
                     self.error_stage = "LLM"
