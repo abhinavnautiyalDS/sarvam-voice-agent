@@ -135,7 +135,7 @@ class CloudVoiceAgent:
                 "encoding": "linear16",
                 "sample_rate": "16000",
                 "threshold": "0.3",
-                "silence_duration_ms": "700",
+                "silence_duration_ms": "900",
                 "min_speech_duration_ms": "300",
             }
         )
