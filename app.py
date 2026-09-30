@@ -23,6 +23,44 @@ if "pcm_output" not in st.session_state:
     st.session_state.pcm_output = None
 if "audio_sink" not in st.session_state:
     st.session_state.audio_sink = None
+if "primary_language" not in st.session_state:
+    st.session_state.primary_language = "Hindi"
+if "secondary_language" not in st.session_state:
+    st.session_state.secondary_language = "English"
+
+st.subheader("Language settings")
+lang_options = {
+    "Hindi": "hi-IN",
+    "English": "en-IN",
+}
+col1, col2 = st.columns(2)
+with col1:
+    primary_language = st.selectbox(
+        "Primary language",
+        list(lang_options.keys()),
+        index=list(lang_options.keys()).index(st.session_state.primary_language),
+        key="primary_language_select",
+    )
+with col2:
+    secondary_choices = [x for x in lang_options if x != primary_language]
+    secondary_default = (
+        st.session_state.secondary_language
+        if st.session_state.secondary_language in secondary_choices
+        else secondary_choices[0]
+    )
+    secondary_language = st.selectbox(
+        "Secondary language",
+        secondary_choices,
+        index=secondary_choices.index(secondary_default),
+        key="secondary_language_select",
+    )
+
+st.session_state.primary_language = primary_language
+st.session_state.secondary_language = secondary_language
+
+st.caption(
+    f"Allowed languages: {primary_language} + {secondary_language}"
+)
 
 if st.button(
     "Start voice agent",
@@ -44,6 +82,8 @@ if st.button(
             st.secrets["SARVAM_API_KEY"],
             st.secrets["BAKBAK_API_KEY"],
             st.secrets["BAKBAK_VOICE_ID"],
+            primary_language=lang_options[primary_language],
+            secondary_language=lang_options[secondary_language],
             output_source=pcm_output,
         )
 
