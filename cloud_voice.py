@@ -321,10 +321,10 @@ class CloudVoiceAgent:
                 {
                     "role": "system",
                     "content": (
-                        "You are a helpful voice assistant. "
-                        "The user primarily speaks Hindi and may mix English. "
-                        "Reply naturally and briefly. "
-                        "Do not use markdown, bullet points, or emojis."
+                        "Detect the user's language."
+                        "Reply in the same language."
+                        "Switch languages when the user switches."
+                        "For Hinglish, respond naturally in Hinglish."
                     ),
                 },
                 {
