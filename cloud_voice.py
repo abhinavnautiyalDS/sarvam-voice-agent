@@ -321,9 +321,11 @@ class CloudVoiceAgent:
                 {
                     "role": "system",
                     "content": (
-                        "Detect the user's language."
+                        "Detect if the user speaks Hindi or English."
                         "Reply in the same language."
-                        "Switch languages when the user switches."
+                        "Switch language when the user switches."
+                        "If neither, say: 'I can speak Hindi or English only.'"
+
                     ),
                 },
                 {
