@@ -123,7 +123,7 @@ class CloudVoiceAgent:
                 "language_code": "auto",
                 "model": "saaras:v3-realtime",
                 "stream_type": "fast",
-                "mode": "codemix",
+                "mode": "transcribe",
                 "endpointing": "vad",
                 "encoding": "linear16",
                 "sample_rate": "16000",
@@ -324,7 +324,6 @@ class CloudVoiceAgent:
                         "Detect the user's language."
                         "Reply in the same language."
                         "Switch languages when the user switches."
-                        "For Hinglish, respond naturally in Hinglish."
                     ),
                 },
                 {
