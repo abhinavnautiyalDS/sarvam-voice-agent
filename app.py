@@ -120,48 +120,53 @@ if st.session_state.running and agent is not None:
     def live_diagnostics():
         playing = bool(webrtc_ctx.state.playing)
 
-        if playing:
-            st.success("WebRTC: CONNECTED")
+        receiving_audio = agent.audio_frames_received > 0
+        if playing or receiving_audio:
+            st.success("WebRTC: CONNECTED / RECEIVING AUDIO")
         else:
-            st.warning("WebRTC: NOT CONNECTED / CONNECTING — the browser is not sending audio yet.")
+            st.warning("WebRTC: CONNECTING — waiting for browser audio.")
 
         if agent.error:
             st.error(f"{agent.error_stage or 'Pipeline'} error: {agent.error}")
 
         st.subheader("Pipeline status")
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("WebRTC", "Connected" if playing else "Waiting")
-        c2.metric("STT", agent.stt_status)
-        c3.metric("LLM", agent.llm_status)
-        c4.metric("BakBak", agent.tts_status)
+        c1.metric("WebRTC", "Receiving" if receiving_audio else "Waiting")
+        c2.metric("STT", "Listening" if agent.stt_status in ("Connected — waiting for speech", "Listening") else agent.stt_status)
+        c3.metric("LLM", "Working" if agent.llm_status == "Generating response" else agent.llm_status)
+        c4.metric("BakBak", "Speaking" if agent.tts_status == "Generating speech with BakBak" else agent.tts_status)
 
         st.write(f"**Audio:** {agent.audio_frames_received:,} browser frames received / {agent.audio_bytes_sent:,} bytes sent to Saaras")
         st.write(f"**Last Saaras event:** `{agent.last_stt_event or '—'}`")
 
-        st.markdown("### 1. STT — What did Saaras hear?")
-        if agent.last_user_text:
-            st.info(f"**Transcript:** {agent.last_user_text}")
+        st.markdown("### 1. STT — Transcript")
+        if agent.live_transcript:
+            st.info(f"**Live transcript:** {agent.live_transcript}")
         else:
-            st.caption("No final transcript yet. Speak after WebRTC shows CONNECTED.")
+            st.caption("Waiting for speech...")
 
-        st.markdown("### 2. LLM — What did Sarvam return?")
-        if agent.last_llm_input:
-            st.write(f"**Input to LLM:** {agent.last_llm_input}")
+        if agent.last_user_text:
+            st.success(f"**Final transcript:** {agent.last_user_text}")
+
+        st.markdown("### 2. LLM — Response")
         if agent.last_assistant_text:
-            st.success(f"**LLM response:** {agent.last_assistant_text}")
+            st.success(f"**Sarvam returned:** {agent.last_assistant_text}")
         else:
-            st.caption("No LLM response yet.")
+            st.caption("Waiting for Sarvam response...")
+        if agent.last_llm_input:
+            st.caption(f"LLM input: {agent.last_llm_input}")
         if agent.llm_latency_ms is not None:
             st.caption(f"LLM latency: {agent.llm_latency_ms} ms")
 
-        st.markdown("### 3. BakBak TTS — Did speech generation work?")
+        st.markdown("### 3. BakBak TTS — Speech")
         if agent.last_tts_input:
             st.write(f"**Text sent to BakBak:** {agent.last_tts_input}")
         if agent.tts_audio_bytes:
             st.success(f"**Audio generated:** {agent.tts_audio_bytes:,} PCM bytes")
-            st.caption(f"BakBak latency: {agent.tts_latency_ms} ms | Output pushed to WebRTC: {agent.output_bytes_pushed:,} bytes")
+            st.caption(f"BakBak latency: {agent.tts_latency_ms} ms")
+            st.caption(f"Audio pushed to browser: {agent.output_bytes_pushed:,} bytes")
         else:
-            st.caption("No BakBak audio generated yet.")
+            st.caption("Waiting for BakBak audio...")
 
         st.markdown("### Current pipeline")
         st.code(
