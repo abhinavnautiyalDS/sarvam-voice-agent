@@ -202,7 +202,6 @@ class CloudVoiceAgent:
                 self.last_user_text = transcript
                 self.stt_status = "Transcript received"
                 self.llm_status = "Generating response"
-                self.llm_status = "Generating response"
                 self.error = ""
                 self.error_stage = ""
 
