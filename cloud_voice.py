@@ -43,6 +43,7 @@ class CloudVoiceAgent:
         self.llm_status = "Idle"
         self.tts_status = "Idle"
         self.last_stt_event = ""
+        self.last_stt_raw = ""
         self.last_user_text = ""
         self.live_transcript = ""
         self.last_assistant_text = ""
@@ -72,6 +73,7 @@ class CloudVoiceAgent:
         self.llm_status = "Idle"
         self.tts_status = "Idle"
         self.last_stt_event = ""
+        self.last_stt_raw = ""
         self.live_transcript = ""
         self.audio_frames_received = 0
         self.audio_bytes_sent = 0
@@ -191,20 +193,23 @@ class CloudVoiceAgent:
             event = json.loads(raw)
             event_type = event.get("event")
             self.last_stt_event = event_type or str(event)
+            self.last_stt_raw = json.dumps(event, ensure_ascii=False)
 
             if event_type == "session.begin":
                 self.stt_status = "Connected — waiting for speech"
 
             elif event_type == "transcript.partial":
-                partial = event.get("transcript", "").strip()
+                partial = self._extract_transcript(event)
+
                 if partial:
                     self.live_transcript = partial
                     self.stt_status = "Listening"
 
             elif event_type == "transcript.final":
-                transcript = event.get("transcript", "").strip()
+                transcript = self._extract_transcript(event)
 
                 if not transcript:
+                    self.stt_status = "Final transcript event received — text missing"
                     continue
 
                 self.last_user_text = transcript
@@ -275,6 +280,29 @@ class CloudVoiceAgent:
                 raise RuntimeError(
                     f"Sarvam STT error {code}: {message}"
                 )
+
+    @staticmethod
+    def _extract_transcript(event: dict) -> str:
+        """Extract transcript text across Sarvam realtime event shapes."""
+        candidates = [
+            event.get("text"),
+            event.get("transcript"),
+        ]
+
+        data = event.get("data")
+        if isinstance(data, dict):
+            candidates.extend(
+                [
+                    data.get("text"),
+                    data.get("transcript"),
+                ]
+            )
+
+        for value in candidates:
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        return ""
 
     async def _get_llm_response(self, user_text: str) -> str:
         self.last_llm_input = user_text
