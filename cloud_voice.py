@@ -44,6 +44,7 @@ class CloudVoiceAgent:
         self.tts_status = "Idle"
         self.last_stt_event = ""
         self.last_stt_raw = ""
+        self.last_detected_language = ""
         self.last_user_text = ""
         self.live_transcript = ""
         self.last_assistant_text = ""
@@ -74,6 +75,7 @@ class CloudVoiceAgent:
         self.tts_status = "Idle"
         self.last_stt_event = ""
         self.last_stt_raw = ""
+        self.last_detected_language = ""
         self.live_transcript = ""
         self.audio_frames_received = 0
         self.audio_bytes_sent = 0
@@ -215,18 +217,38 @@ class CloudVoiceAgent:
                 self.last_user_text = transcript
                 self.live_transcript = transcript
                 self.stt_status = "Transcript received"
-                self.llm_status = "Generating response"
                 self.error = ""
                 self.error_stage = ""
 
-                try:
-                    response = await self._get_llm_response(transcript)
-                except Exception as exc:
-                    self.error_stage = "LLM"
-                    self.error = f"{type(exc).__name__}: {exc}"
-                    self.llm_status = "Failed"
-                    self.pipeline_status = "LLM failed"
-                    continue
+                # Saaras auto-detects the spoken language on transcript.final.
+                # Only Hindi and English are allowed for this agent.
+                detected_language = event.get("language")
+                if not detected_language:
+                    data = event.get("data")
+                    if isinstance(data, dict):
+                        detected_language = data.get("language")
+
+                self.last_detected_language = detected_language or "unknown"
+
+                if detected_language not in {"hi-IN", "en-IN"}:
+                    response = "I can speak Hindi or English only."
+                    tts_language = "en"
+                else:
+                    self.llm_status = "Generating response"
+
+                    try:
+                        response = await self._get_llm_response(
+                            transcript,
+                            detected_language,
+                        )
+                    except Exception as exc:
+                        self.error_stage = "LLM"
+                        self.error = f"{type(exc).__name__}: {exc}"
+                        self.llm_status = "Failed"
+                        self.pipeline_status = "LLM failed"
+                        continue
+
+                    tts_language = "hi" if detected_language == "hi-IN" else "en"
 
                 if not response:
                     self.error_stage = "LLM"
@@ -242,7 +264,10 @@ class CloudVoiceAgent:
                 self.last_tts_input = response
 
                 try:
-                    audio = await self._get_bakbak_audio(response)
+                    audio = await self._get_bakbak_audio(
+                        response,
+                        language=tts_language,
+                    )
                 except Exception as exc:
                     self.error_stage = "BakBak TTS"
                     self.error = f"{type(exc).__name__}: {exc}"
@@ -304,7 +329,11 @@ class CloudVoiceAgent:
 
         return ""
 
-    async def _get_llm_response(self, user_text: str) -> str:
+    async def _get_llm_response(
+        self,
+        user_text: str,
+        detected_language: str,
+    ) -> str:
         self.last_llm_input = user_text
         started = time.perf_counter()
 
@@ -321,10 +350,10 @@ class CloudVoiceAgent:
                 {
                     "role": "system",
                     "content": (
-                        "Detect if the user speaks Hindi or English."
-                        "Reply in the same language."
-                        "Switch language when the user switches."
-                        "If neither, say: 'I can speak Hindi or English only.'"
+                        "Reply in the detected language."
+                        "Switch between Hindi and English when the user switches."
+                        ""
+                        ""
 
                     ),
                 },
@@ -354,7 +383,11 @@ class CloudVoiceAgent:
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         return (content or "").strip()
 
-    async def _get_bakbak_audio(self, text: str) -> bytes:
+    async def _get_bakbak_audio(
+        self,
+        text: str,
+        language: str,
+    ) -> bytes:
         started = time.perf_counter()
 
         url = "https://hub.getraya.app/v1/text-to-speech"
@@ -368,7 +401,7 @@ class CloudVoiceAgent:
             "text": text,
             "voice_id": self.bakbak_voice_id,
             "model": "m1",
-            "language": "hi",
+            "language": language,
             "codec": "wav",
             "sample_rate": 24000,
             "speed": 1.0,
