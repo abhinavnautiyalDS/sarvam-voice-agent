@@ -1,11 +1,11 @@
 import os
 
-import httpx
 import streamlit as st
 from streamlit_webrtc import (
     WebRtcMode,
     create_audio_sink_track,
     create_pcm_audio_source_track,
+    get_hf_ice_servers,
     webrtc_streamer,
 )
 
@@ -31,8 +31,11 @@ if st.button(
     use_container_width=True,
 ):
     try:
+        st.session_state.webrtc_generation = st.session_state.get("webrtc_generation", 0) + 1
+        generation = st.session_state.webrtc_generation
+
         pcm_output = create_pcm_audio_source_track(
-            key="sarvam_voice_output",
+            key=f"sarvam_voice_output_{generation}",
             sample_rate=24000,
             ptime=0.020,
         )
@@ -49,7 +52,7 @@ if st.button(
 
         audio_sink = create_audio_sink_track(
             callback=audio_sink_callback,
-            key="sarvam_voice_input",
+            key=f"sarvam_voice_input_{generation}",
         )
 
         st.session_state.pcm_output = pcm_output
@@ -63,19 +66,6 @@ if st.button(
     except Exception as exc:
         st.error(f"Could not start: {exc}")
 
-@st.cache_data(ttl=300)
-def get_hf_turn_servers(token: str):
-    url = "https://fastrtc-turn-service.hf.space/credentials"
-    response = httpx.get(
-        url,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=10,
-        follow_redirects=True,
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data.get("iceServers", [])
-
 agent = st.session_state.cloud_agent
 
 if st.session_state.running and agent is not None:
@@ -87,9 +77,9 @@ if st.session_state.running and agent is not None:
 
     if hf_token:
         try:
-            ice_servers = get_hf_turn_servers(hf_token)
+            ice_servers = get_hf_ice_servers(token=hf_token)
         except Exception as exc:
-            st.warning(f"HF TURN unavailable ({exc}). Falling back to Google STUN.")
+            st.warning(f"HF TURN unavailable ({exc}). Using STUN only.")
 
     ice_servers.append({"urls": "stun:stun.l.google.com:19302"})
     rtc_config = {"iceServers": ice_servers}
