@@ -99,6 +99,7 @@ if st.session_state.running and agent is not None:
         mode=WebRtcMode.SENDRECV,
         sink_audio_track=audio_sink,
         source_audio_track=pcm_output.track,
+        sendback_audio=True,
         media_stream_constraints={
             "audio": {
                 "echoCancellation": True,
