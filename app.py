@@ -148,6 +148,10 @@ if st.session_state.running and agent is not None:
         if agent.last_user_text:
             st.success(f"**Final transcript:** {agent.last_user_text}")
 
+        if not agent.last_user_text and agent.last_stt_event == "transcript.final" and agent.last_stt_raw:
+            st.warning("Saaras sent a final transcript event, but no transcript text was found.")
+            st.caption(f"Raw Saaras event: {agent.last_stt_raw}")
+
         st.markdown("### 2. LLM — Response")
         if agent.last_assistant_text:
             st.success(f"**Sarvam returned:** {agent.last_assistant_text}")
@@ -170,7 +174,7 @@ if st.session_state.running and agent is not None:
 
         st.markdown("### Current pipeline")
         st.code(
-            f"Browser WebRTC: {'CONNECTED' if playing else 'WAITING'}\n"
+            f"Browser WebRTC: {'CONNECTED / RECEIVING AUDIO' if (playing or receiving_audio) else 'WAITING'}\n"
             f"↓\n"
             f"Saaras STT: {agent.stt_status}\n"
             f"Transcript: {agent.last_user_text or '—'}\n"
