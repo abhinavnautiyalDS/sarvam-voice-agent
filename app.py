@@ -32,6 +32,7 @@ st.subheader("Language settings")
 lang_options = {
     "Hindi": "hi-IN",
     "English": "en-IN",
+    "Telugu": "te-IN",
 }
 col1, col2 = st.columns(2)
 with col1:
