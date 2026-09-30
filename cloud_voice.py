@@ -127,9 +127,9 @@ class CloudVoiceAgent:
                 "endpointing": "vad",
                 "encoding": "linear16",
                 "sample_rate": "16000",
-                "threshold": "0.1",
+                "threshold": "0.3",
                 "silence_duration_ms": "700",
-                "min_speech_duration_ms": "200",
+                "min_speech_duration_ms": "300",
             }
         )
 
