@@ -126,7 +126,7 @@ if st.session_state.running and agent is not None:
             st.warning("WebRTC: NOT CONNECTED / CONNECTING — the browser is not sending audio yet.")
 
         if agent.error:
-            st.error(f"{agent.error_stage or "Pipeline"} error: {agent.error}")
+            st.error(f"{agent.error_stage or 'Pipeline'} error: {agent.error}")
 
         st.subheader("Pipeline status")
         c1, c2, c3, c4 = st.columns(4)
@@ -136,7 +136,7 @@ if st.session_state.running and agent is not None:
         c4.metric("BakBak", agent.tts_status)
 
         st.write(f"**Audio:** {agent.audio_frames_received:,} browser frames received / {agent.audio_bytes_sent:,} bytes sent to Saaras")
-        st.write(f"**Last Saaras event:** `{agent.last_stt_event or "—"}`")
+        st.write(f"**Last Saaras event:** `{agent.last_stt_event or '—'}`")
 
         st.markdown("### 1. STT — What did Saaras hear?")
         if agent.last_user_text:
