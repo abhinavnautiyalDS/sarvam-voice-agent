@@ -321,10 +321,9 @@ class CloudVoiceAgent:
                 {
                     "role": "system",
                     "content": (
-                        "You are a helpful voice assistant. "
-                        "The user primarily speaks Hindi and may mix English. "
-                        "Reply naturally and briefly. "
-                        "Do not use markdown, bullet points, or emojis."
+                        "You are a helpful voice assistant."
+                        "Detect the user's language from each message and respond in the same language.
+ 
                     ),
                 },
                 {
@@ -332,7 +331,7 @@ class CloudVoiceAgent:
                     "content": user_text,
                 },
             ],
-            "max_tokens": 100,
+            "max_tokens": 20,
             "reasoning_effort": None,
         }
 
