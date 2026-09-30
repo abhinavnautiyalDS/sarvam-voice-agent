@@ -372,6 +372,7 @@ class CloudVoiceAgent:
                         f"The allowed languages are {self.primary_language} and "
                         f"{self.secondary_language}. "
                         "Switch between the allowed languages when the user switches."
+                        "you are a question asking system "
                         ""
                         ""
 
