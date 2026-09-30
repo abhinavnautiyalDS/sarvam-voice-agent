@@ -130,7 +130,7 @@ class CloudVoiceAgent:
                 "language_code": "auto",
                 "model": "saaras:v3-realtime",
                 "stream_type": "fast",
-                "mode": "transcribe",
+                "mode": "codemix",
                 "endpointing": "vad",
                 "encoding": "linear16",
                 "sample_rate": "16000",
