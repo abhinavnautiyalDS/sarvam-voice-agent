@@ -84,11 +84,6 @@ if st.session_state.running and agent is not None:
     ice_servers.append({"urls": "stun:stun.l.google.com:19302"})
     rtc_config = {"iceServers": ice_servers}
 
-    def handle_audio_ended():
-        # WebRTC runs this callback outside Streamlit's main thread.
-        # Stop the background Sarvam pipeline when the browser audio track dies.
-        agent.stop()
-
     webrtc_ctx = webrtc_streamer(
         key=f"sarvam-voice-hf-{st.session_state.webrtc_generation}",
         mode=WebRtcMode.SENDRECV,
@@ -105,7 +100,6 @@ if st.session_state.running and agent is not None:
         },
         frontend_rtc_configuration=rtc_config,
         server_rtc_configuration=rtc_config,
-        on_audio_ended=handle_audio_ended,
     )
 
     if len(ice_servers) > 1:
