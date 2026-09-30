@@ -331,7 +331,7 @@ class CloudVoiceAgent:
                     "content": user_text,
                 },
             ],
-            "max_tokens": 20,
+            "max_tokens": 100,
             "reasoning_effort": None,
         }
 
