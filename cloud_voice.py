@@ -3,6 +3,7 @@ import base64
 import json
 import queue
 import threading
+import time
 import urllib.parse
 
 import av
@@ -36,14 +37,25 @@ class CloudVoiceAgent:
             rate=16000,
         )
 
-        self._output_buffer = np.zeros(0, dtype=np.int16)
-        self._output_lock = threading.Lock()
-
+        # Pipeline / UI state
+        self.pipeline_status = "Not started"
+        self.stt_status = "Not started"
+        self.llm_status = "Idle"
+        self.tts_status = "Idle"
+        self.last_stt_event = ""
         self.last_user_text = ""
         self.last_assistant_text = ""
+        self.last_llm_input = ""
+        self.last_tts_input = ""
+
+        self.llm_latency_ms = None
+        self.tts_latency_ms = None
+        self.tts_audio_bytes = 0
+        self.output_bytes_pushed = 0
+
         self.error = ""
-        self.stt_status = "Not started"
-        self.last_stt_event = ""
+        self.error_stage = ""
+
         self.audio_frames_received = 0
         self.audio_bytes_sent = 0
 
@@ -53,10 +65,15 @@ class CloudVoiceAgent:
 
         self.running = True
         self.error = ""
+        self.error_stage = ""
+        self.pipeline_status = "Connecting"
         self.stt_status = "Connecting to Sarvam STT..."
+        self.llm_status = "Idle"
+        self.tts_status = "Idle"
         self.last_stt_event = ""
         self.audio_frames_received = 0
         self.audio_bytes_sent = 0
+        self.output_bytes_pushed = 0
 
         self.thread = threading.Thread(
             target=self._run_thread,
@@ -66,6 +83,7 @@ class CloudVoiceAgent:
 
     def stop(self):
         self.running = False
+        self.pipeline_status = "Stopped"
         self.stt_status = "Stopped"
 
         if self.thread and self.thread.is_alive():
@@ -91,8 +109,9 @@ class CloudVoiceAgent:
             asyncio.run(self._run())
         except Exception as exc:
             self.error = f"{type(exc).__name__}: {exc}"
-            self.stt_status = "STT connection failed"
-            self.running = False
+            self.pipeline_status = "Failed"
+            if not self.error_stage:
+                self.error_stage = "STT/WebSocket"
 
     async def _run(self):
         params = urllib.parse.urlencode(
@@ -121,6 +140,7 @@ class CloudVoiceAgent:
             ping_timeout=20,
             max_size=2**22,
         ) as ws:
+            self.pipeline_status = "Ready"
             self.stt_status = "Connected to Sarvam STT"
 
             receiver = asyncio.create_task(self._receive_stt(ws))
@@ -170,33 +190,72 @@ class CloudVoiceAgent:
             event_type = event.get("event")
             self.last_stt_event = event_type or str(event)
 
-            if event_type == "transcript.final":
+            if event_type == "session.begin":
+                self.stt_status = "Connected — waiting for speech"
+
+            elif event_type == "transcript.final":
                 transcript = event.get("transcript", "").strip()
 
                 if not transcript:
                     continue
 
                 self.last_user_text = transcript
-                self.stt_status = "Transcript received — generating response"
+                self.stt_status = "Transcript received"
+                self.llm_status = "Generating response"
+                self.llm_status = "Generating response"
+                self.error = ""
+                self.error_stage = ""
 
-                response = await self._get_llm_response(transcript)
+                try:
+                    response = await self._get_llm_response(transcript)
+                except Exception as exc:
+                    self.error_stage = "LLM"
+                    self.error = f"{type(exc).__name__}: {exc}"
+                    self.llm_status = "Failed"
+                    self.pipeline_status = "LLM failed"
+                    continue
+
                 if not response:
-                    raise RuntimeError(
-                        "Sarvam LLM returned an empty response"
-                    )
+                    self.error_stage = "LLM"
+                    self.error = "Sarvam LLM returned an empty response"
+                    self.llm_status = "Failed — empty response"
+                    self.pipeline_status = "LLM failed"
+                    continue
 
                 self.last_assistant_text = response
+                self.llm_status = "Completed"
 
-                self.stt_status = "Generating speech with BakBak"
-                audio = await self._get_bakbak_audio(response)
+                self.tts_status = "Generating speech with BakBak"
+                self.last_tts_input = response
+
+                try:
+                    audio = await self._get_bakbak_audio(response)
+                except Exception as exc:
+                    self.error_stage = "BakBak TTS"
+                    self.error = f"{type(exc).__name__}: {exc}"
+                    self.tts_status = "Failed"
+                    self.pipeline_status = "BakBak failed"
+                    continue
+
                 if not audio:
-                    raise RuntimeError(
-                        "BakBak returned empty audio"
-                    )
+                    self.error_stage = "BakBak TTS"
+                    self.error = "BakBak returned empty audio"
+                    self.tts_status = "Failed — empty audio"
+                    self.pipeline_status = "BakBak failed"
+                    continue
 
-                self._enqueue_output(audio)
+                try:
+                    self._enqueue_output(audio)
+                except Exception as exc:
+                    self.error_stage = "WebRTC output"
+                    self.error = f"{type(exc).__name__}: {exc}"
+                    self.tts_status = "Audio generated, but output failed"
+                    self.pipeline_status = "WebRTC output failed"
+                    continue
 
-                self.stt_status = "Ready"
+                self.tts_status = f"Ready — {len(audio):,} PCM bytes queued"
+                self.pipeline_status = "Ready"
+                self.stt_status = "Connected — waiting for speech"
 
             elif event_type == "error":
                 code = event.get("code", "unknown")
@@ -204,11 +263,15 @@ class CloudVoiceAgent:
                     "message",
                     "Sarvam realtime STT error",
                 )
+                self.error_stage = "STT"
                 raise RuntimeError(
                     f"Sarvam STT error {code}: {message}"
                 )
 
     async def _get_llm_response(self, user_text: str) -> str:
+        self.last_llm_input = user_text
+        started = time.perf_counter()
+
         url = "https://api.sarvam.ai/v1/chat/completions"
 
         headers = {
@@ -246,9 +309,17 @@ class CloudVoiceAgent:
             response.raise_for_status()
             data = response.json()
 
-        return data["choices"][0]["message"]["content"].strip()
+        self.llm_latency_ms = round(
+            (time.perf_counter() - started) * 1000,
+            1,
+        )
+
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        return (content or "").strip()
 
     async def _get_bakbak_audio(self, text: str) -> bytes:
+        started = time.perf_counter()
+
         url = "https://hub.getraya.app/v1/text-to-speech"
 
         headers = {
@@ -275,7 +346,15 @@ class CloudVoiceAgent:
             response.raise_for_status()
             audio = response.content
 
-        return audio[44:] if audio[:4] == b"RIFF" else audio
+        if audio[:4] == b"RIFF":
+            audio = audio[44:]
+
+        self.tts_audio_bytes = len(audio)
+        self.tts_latency_ms = round(
+            (time.perf_counter() - started) * 1000,
+            1,
+        )
+        return audio
 
     def _enqueue_output(self, pcm16_24k: bytes):
         """Push 24 kHz mono PCM into streamlit-webrtc's PcmAudioSource."""
@@ -286,6 +365,7 @@ class CloudVoiceAgent:
             raise RuntimeError("WebRTC output source is not configured")
 
         self.output_source.push(pcm16_24k)
+        self.output_bytes_pushed += len(pcm16_24k)
 
     def ingest_webrtc_frame(self, frame: av.AudioFrame):
         """Convert browser audio to mono 16 kHz signed PCM for Saaras."""
