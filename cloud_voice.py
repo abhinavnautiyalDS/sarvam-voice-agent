@@ -120,7 +120,7 @@ class CloudVoiceAgent:
     async def _run(self):
         params = urllib.parse.urlencode(
             {
-                "language_code": "hi-IN",
+                "language_code": "auto",
                 "model": "saaras:v3-realtime",
                 "stream_type": "fast",
                 "mode": "codemix",
