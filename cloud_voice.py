@@ -20,11 +20,16 @@ class CloudVoiceAgent:
         sarvam_api_key: str,
         bakbak_api_key: str,
         bakbak_voice_id: str,
+        primary_language: str = "hi-IN",
+        secondary_language: str = "en-IN",
         output_source=None,
     ):
         self.sarvam_api_key = sarvam_api_key
         self.bakbak_api_key = bakbak_api_key
         self.bakbak_voice_id = bakbak_voice_id
+        self.primary_language = primary_language
+        self.secondary_language = secondary_language
+        self.allowed_languages = {primary_language, secondary_language}
         self.output_source = output_source
 
         self.audio_in = queue.Queue(maxsize=100)
@@ -230,7 +235,7 @@ class CloudVoiceAgent:
 
                 self.last_detected_language = detected_language or "unknown"
 
-                if detected_language not in {"hi-IN", "en-IN"}:
+                if detected_language not in self.allowed_languages:
                     response = "I can speak Hindi or English only."
                     tts_language = "en"
                 else:
@@ -248,7 +253,10 @@ class CloudVoiceAgent:
                         self.pipeline_status = "LLM failed"
                         continue
 
-                    tts_language = "hi" if detected_language == "hi-IN" else "en"
+                    tts_language = (
+                        "hi" if detected_language == "hi-IN"
+                        else "en"
+                    )
 
                 if not response:
                     self.error_stage = "LLM"
@@ -350,8 +358,10 @@ class CloudVoiceAgent:
                 {
                     "role": "system",
                     "content": (
-                        "Reply in the detected language."
-                        "Switch between Hindi and English when the user switches."
+                        f"Reply in the detected language. "
+                        f"The allowed languages are {self.primary_language} and "
+                        f"{self.secondary_language}. "
+                        "Switch between the allowed languages when the user switches."
                         ""
                         ""
 
