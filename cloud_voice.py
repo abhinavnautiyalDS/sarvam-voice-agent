@@ -44,6 +44,7 @@ class CloudVoiceAgent:
         self.tts_status = "Idle"
         self.last_stt_event = ""
         self.last_user_text = ""
+        self.live_transcript = ""
         self.last_assistant_text = ""
         self.last_llm_input = ""
         self.last_tts_input = ""
@@ -71,6 +72,7 @@ class CloudVoiceAgent:
         self.llm_status = "Idle"
         self.tts_status = "Idle"
         self.last_stt_event = ""
+        self.live_transcript = ""
         self.audio_frames_received = 0
         self.audio_bytes_sent = 0
         self.output_bytes_pushed = 0
@@ -193,6 +195,12 @@ class CloudVoiceAgent:
             if event_type == "session.begin":
                 self.stt_status = "Connected — waiting for speech"
 
+            elif event_type == "transcript.partial":
+                partial = event.get("transcript", "").strip()
+                if partial:
+                    self.live_transcript = partial
+                    self.stt_status = "Listening"
+
             elif event_type == "transcript.final":
                 transcript = event.get("transcript", "").strip()
 
@@ -200,6 +208,7 @@ class CloudVoiceAgent:
                     continue
 
                 self.last_user_text = transcript
+                self.live_transcript = transcript
                 self.stt_status = "Transcript received"
                 self.llm_status = "Generating response"
                 self.error = ""
