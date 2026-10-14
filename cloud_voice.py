@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import os
 import queue
 import threading
 import time
@@ -10,6 +11,8 @@ import av
 import httpx
 import numpy as np
 import websockets
+
+from language_classifier import classify_transcript
 
 
 class CloudVoiceAgent:
@@ -23,6 +26,9 @@ class CloudVoiceAgent:
         primary_language: str = "hi-IN",
         secondary_language: str = "en-IN",
         output_source=None,
+        llm_model: str = "sarvam-105b-conversations",
+        tts_model: str = "m1",
+        classifier_enabled: bool = True,
     ):
         self.sarvam_api_key = sarvam_api_key
         self.bakbak_api_key = bakbak_api_key
@@ -31,18 +37,15 @@ class CloudVoiceAgent:
         self.secondary_language = secondary_language
         self.allowed_languages = {primary_language, secondary_language}
         self.output_source = output_source
+        self.llm_model = llm_model
+        self.tts_model = tts_model
+        self.classifier_enabled = classifier_enabled
 
         self.audio_in = queue.Queue(maxsize=100)
         self.running = False
         self.thread = None
+        self._input_resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
 
-        self._input_resampler = av.AudioResampler(
-            format="s16",
-            layout="mono",
-            rate=16000,
-        )
-
-        # Pipeline / UI state
         self.pipeline_status = "Not started"
         self.stt_status = "Not started"
         self.llm_status = "Idle"
@@ -50,27 +53,29 @@ class CloudVoiceAgent:
         self.last_stt_event = ""
         self.last_stt_raw = ""
         self.last_detected_language = ""
+        self.last_language_source = "Saaras"
+        self.last_classifier_result = {
+            "label": "unavailable", "confidence": 0.0, "probabilities": {},
+            "latency_ms": 0.0, "available": False, "reason": "not_run",
+        }
+        self.classifier_status = "Enabled" if classifier_enabled else "Disabled"
         self.last_user_text = ""
         self.live_transcript = ""
         self.last_assistant_text = ""
         self.last_llm_input = ""
         self.last_tts_input = ""
-
         self.llm_latency_ms = None
         self.tts_latency_ms = None
         self.tts_audio_bytes = 0
         self.output_bytes_pushed = 0
-
         self.error = ""
         self.error_stage = ""
-
         self.audio_frames_received = 0
         self.audio_bytes_sent = 0
 
     def start(self):
         if self.running:
             return
-
         self.running = True
         self.error = ""
         self.error_stage = ""
@@ -81,31 +86,26 @@ class CloudVoiceAgent:
         self.last_stt_event = ""
         self.last_stt_raw = ""
         self.last_detected_language = ""
+        self.last_language_source = "Saaras"
+        self.last_user_text = ""
         self.live_transcript = ""
         self.audio_frames_received = 0
         self.audio_bytes_sent = 0
         self.output_bytes_pushed = 0
-
-        self.thread = threading.Thread(
-            target=self._run_thread,
-            daemon=True,
-        )
+        self.thread = threading.Thread(target=self._run_thread, daemon=True)
         self.thread.start()
 
     def stop(self):
         self.running = False
         self.pipeline_status = "Stopped"
         self.stt_status = "Stopped"
-
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=2)
-
         self.thread = None
 
     def push_audio(self, pcm16_mono_16k: bytes):
         if not self.running:
             return
-
         try:
             self.audio_in.put_nowait(pcm16_mono_16k)
         except queue.Full:
@@ -125,46 +125,35 @@ class CloudVoiceAgent:
                 self.error_stage = "STT/WebSocket"
 
     async def _run(self):
-        params = urllib.parse.urlencode(
-            {
-                "language_code": "auto",
-                "model": "saaras:v3-realtime",
-                "stream_type": "fast",
-                "mode": "verbatim",
-                "endpointing": "vad",
-                "encoding": "linear16",
-                "sample_rate": "16000",
-                "threshold": "0.3",
-                "silence_duration_ms": "900",
-                "min_speech_duration_ms": "300",
-            }
-        )
-
+        params = urllib.parse.urlencode({
+            "language_code": "auto",
+            "model": os.getenv("SARVAM_STT_MODEL", "saaras:v3-realtime"),
+            "stream_type": os.getenv("SARVAM_STT_STREAM_TYPE", "fast"),
+            "mode": os.getenv("SARVAM_STT_MODE", "verbatim"),
+            "endpointing": "vad",
+            "encoding": "linear16",
+            "sample_rate": "16000",
+            "threshold": os.getenv("SARVAM_STT_THRESHOLD", "0.3"),
+            "silence_duration_ms": os.getenv("SARVAM_SILENCE_DURATION_MS", "900"),
+            "min_speech_duration_ms": os.getenv("SARVAM_MIN_SPEECH_DURATION_MS", "300"),
+        })
         url = f"wss://api.sarvam.ai/speech-to-text-realtime/ws?{params}"
-
         async with websockets.connect(
             url,
-            additional_headers={
-                "api-subscription-key": self.sarvam_api_key,
-            },
+            additional_headers={"api-subscription-key": self.sarvam_api_key},
             ping_interval=20,
             ping_timeout=20,
             max_size=2**22,
         ) as ws:
             self.pipeline_status = "Ready"
             self.stt_status = "Connected to Sarvam STT"
-
             receiver = asyncio.create_task(self._receive_stt(ws))
             sender = asyncio.create_task(self._send_stt(ws))
-
             done, pending = await asyncio.wait(
-                {receiver, sender},
-                return_when=asyncio.FIRST_EXCEPTION,
+                {receiver, sender}, return_when=asyncio.FIRST_EXCEPTION
             )
-
             for task in pending:
                 task.cancel()
-
             for task in done:
                 exc = task.exception()
                 if exc:
@@ -173,30 +162,19 @@ class CloudVoiceAgent:
     async def _send_stt(self, ws):
         while self.running:
             try:
-                chunk = await asyncio.to_thread(
-                    self.audio_in.get,
-                    True,
-                    0.25,
-                )
+                chunk = await asyncio.to_thread(self.audio_in.get, True, 0.25)
             except queue.Empty:
                 continue
-
-            await ws.send(
-                json.dumps(
-                    {
-                        "event": "audio_input",
-                        "audio": base64.b64encode(chunk).decode("utf-8"),
-                    }
-                )
-            )
-
+            await ws.send(json.dumps({
+                "event": "audio_input",
+                "audio": base64.b64encode(chunk).decode("utf-8"),
+            }))
             self.audio_bytes_sent += len(chunk)
 
     async def _receive_stt(self, ws):
         async for raw in ws:
             if not self.running:
                 return
-
             event = json.loads(raw)
             event_type = event.get("event")
             self.last_stt_event = event_type or str(event)
@@ -204,17 +182,13 @@ class CloudVoiceAgent:
 
             if event_type == "session.begin":
                 self.stt_status = "Connected — waiting for speech"
-
             elif event_type == "transcript.partial":
                 partial = self._extract_transcript(event)
-
                 if partial:
                     self.live_transcript = partial
                     self.stt_status = "Listening"
-
             elif event_type == "transcript.final":
                 transcript = self._extract_transcript(event)
-
                 if not transcript:
                     self.stt_status = "Final transcript event received — text missing"
                     continue
@@ -225,22 +199,49 @@ class CloudVoiceAgent:
                 self.error = ""
                 self.error_stage = ""
 
-                # Saaras auto-detects the spoken language on transcript.final.
-                # Only Hindi and English are allowed for this agent.
+                if self.classifier_enabled:
+                    self.last_classifier_result = classify_transcript(transcript)
+                    result = self.last_classifier_result
+                    self.classifier_status = (
+                        f"{result.get('label', 'unknown')} ({result.get('confidence', 0.0):.0%})"
+                        if result.get("available")
+                        else f"Unavailable; using Saaras ({result.get('reason', 'unknown')})"
+                    )
+                else:
+                    self.last_classifier_result = {
+                        "label": "disabled", "confidence": 0.0, "probabilities": {},
+                        "latency_ms": 0.0, "available": False, "reason": "disabled",
+                    }
+                    self.classifier_status = "Disabled"
+
                 detected_language = event.get("language")
                 if not detected_language:
                     data = event.get("data")
                     if isinstance(data, dict):
                         detected_language = data.get("language")
+                detected_language = detected_language or "unknown"
+                self.last_detected_language = detected_language
+                self.last_language_source = "Saaras metadata"
 
-                self.last_detected_language = detected_language or "unknown"
+                # The text model is only a fallback if Saaras lacks a usable language.
+                # It never maps Hinglish to a locale: Hinglish is a diagnostic class.
+                if detected_language not in self.allowed_languages:
+                    result = self.last_classifier_result
+                    class_to_code = {"hindi": "hi-IN", "english": "en-IN"}
+                    candidate = class_to_code.get(result.get("label"))
+                    cutoff = float(os.getenv("LANGUAGE_CLASSIFIER_OVERRIDE_CONFIDENCE", "0.80"))
+                    if (
+                        result.get("available")
+                        and candidate in self.allowed_languages
+                        and result.get("confidence", 0.0) >= cutoff
+                    ):
+                        detected_language = candidate
+                        self.last_language_source = "Text classifier fallback"
+                    else:
+                        self.last_language_source = "Saaras unavailable/unsupported; classifier inconclusive"
 
                 if detected_language not in self.allowed_languages:
-                    allowed_names = {
-                        "hi-IN": "Hindi",
-                        "en-IN": "English",
-                        "te-IN": "Telugu",
-                    }
+                    allowed_names = {"hi-IN": "Hindi", "en-IN": "English", "te-IN": "Telugu"}
                     allowed_text = " or ".join(
                         allowed_names.get(code, code)
                         for code in (self.primary_language, self.secondary_language)
@@ -249,24 +250,17 @@ class CloudVoiceAgent:
                     tts_language = "en"
                 else:
                     self.llm_status = "Generating response"
-
                     try:
-                        response = await self._get_llm_response(
-                            transcript,
-                            detected_language,
-                        )
+                        response = await self._get_llm_response(transcript, detected_language)
                     except Exception as exc:
                         self.error_stage = "LLM"
                         self.error = f"{type(exc).__name__}: {exc}"
                         self.llm_status = "Failed"
                         self.pipeline_status = "LLM failed"
                         continue
-
-                    tts_language = {
-                        "hi-IN": "hi",
-                        "en-IN": "en",
-                        "te-IN": "te",
-                    }.get(detected_language, "en")
+                    tts_language = {"hi-IN": "hi", "en-IN": "en", "te-IN": "te"}.get(
+                        detected_language, "en"
+                    )
 
                 if not response:
                     self.error_stage = "LLM"
@@ -277,29 +271,22 @@ class CloudVoiceAgent:
 
                 self.last_assistant_text = response
                 self.llm_status = "Completed"
-
-                self.tts_status = "Generating speech with BakBak"
+                self.tts_status = "Generating speech with BakBak Raya"
                 self.last_tts_input = response
-
                 try:
-                    audio = await self._get_bakbak_audio(
-                        response,
-                        language=tts_language,
-                    )
+                    audio = await self._get_bakbak_audio(response, language=tts_language)
                 except Exception as exc:
                     self.error_stage = "BakBak TTS"
                     self.error = f"{type(exc).__name__}: {exc}"
                     self.tts_status = "Failed"
                     self.pipeline_status = "BakBak failed"
                     continue
-
                 if not audio:
                     self.error_stage = "BakBak TTS"
                     self.error = "BakBak returned empty audio"
                     self.tts_status = "Failed — empty audio"
                     self.pipeline_status = "BakBak failed"
                     continue
-
                 try:
                     self._enqueue_output(audio)
                 except Exception as exc:
@@ -308,166 +295,109 @@ class CloudVoiceAgent:
                     self.tts_status = "Audio generated, but output failed"
                     self.pipeline_status = "WebRTC output failed"
                     continue
-
                 self.tts_status = f"Ready — {len(audio):,} PCM bytes queued"
                 self.pipeline_status = "Ready"
                 self.stt_status = "Connected — waiting for speech"
-
             elif event_type == "error":
                 code = event.get("code", "unknown")
-                message = event.get(
-                    "message",
-                    "Sarvam realtime STT error",
-                )
+                message = event.get("message", "Sarvam realtime STT error")
                 self.error_stage = "STT"
-                raise RuntimeError(
-                    f"Sarvam STT error {code}: {message}"
-                )
+                raise RuntimeError(f"Sarvam STT error {code}: {message}")
 
     @staticmethod
     def _extract_transcript(event: dict) -> str:
-        """Extract transcript text across Sarvam realtime event shapes."""
-        candidates = [
-            event.get("text"),
-            event.get("transcript"),
-        ]
-
+        candidates = [event.get("text"), event.get("transcript")]
         data = event.get("data")
         if isinstance(data, dict):
-            candidates.extend(
-                [
-                    data.get("text"),
-                    data.get("transcript"),
-                ]
-            )
-
+            candidates.extend([data.get("text"), data.get("transcript")])
         for value in candidates:
             if isinstance(value, str) and value.strip():
                 return value.strip()
-
         return ""
 
-    async def _get_llm_response(
-        self,
-        user_text: str,
-        detected_language: str,
-    ) -> str:
+    async def _get_llm_response(self, user_text: str, detected_language: str) -> str:
         self.last_llm_input = user_text
         started = time.perf_counter()
-
-        url = "https://api.sarvam.ai/v1/chat/completions"
-
+        url = os.getenv("SARVAM_LLM_URL", "https://api.sarvam.ai/v1/chat/completions")
         headers = {
             "api-subscription-key": self.sarvam_api_key,
             "Content-Type": "application/json",
         }
-
+        lang_names = {"hi-IN": "Hindi", "en-IN": "English", "te-IN": "Telugu"}
+        spoken = lang_names.get(detected_language, detected_language)
+        primary_name = lang_names.get(self.primary_language, self.primary_language)
+        secondary_name = lang_names.get(self.secondary_language, self.secondary_language)
+        system_prompt = os.getenv(
+            "VOICE_SYSTEM_PROMPT",
+            "You are a concise, natural voice assistant. Answer directly. Reply in the language "
+            "currently used by the user, using natural Hindi-English code-switching when the "
+            "user mixes them. Avoid markdown, bullets, and emojis.",
+        )
         payload = {
-            "model": "sarvam-105b-conversations",
+            "model": self.llm_model,
             "messages": [
                 {
                     "role": "system",
                     "content": (
-                        f"Reply in the detected language. "
-                        f"The allowed languages are {self.primary_language} and "
-                        f"{self.secondary_language}. "
-                        "Switch between the allowed languages when the user switches."
-                        "you are a question asking system "
-                        ""
-                        ""
-
+                        f"{system_prompt} Configured languages: {primary_name} and {secondary_name}. "
+                        f"The latest utterance was detected as {spoken}. Follow the language of "
+                        "each new utterance; do not force English when the user speaks Hindi/Hinglish."
                     ),
                 },
-                {
-                    "role": "user",
-                    "content": user_text,
-                },
+                {"role": "user", "content": user_text},
             ],
-            "max_tokens": 100,
-            "reasoning_effort": None,
+            "max_tokens": int(os.getenv("SARVAM_LLM_MAX_TOKENS", "120")),
         }
-
         async with httpx.AsyncClient(timeout=45) as client:
-            response = await client.post(
-                url,
-                headers=headers,
-                json=payload,
-            )
+            response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()
-
-        self.llm_latency_ms = round(
-            (time.perf_counter() - started) * 1000,
-            1,
-        )
-
+        self.llm_latency_ms = round((time.perf_counter() - started) * 1000, 1)
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         return (content or "").strip()
 
-    async def _get_bakbak_audio(
-        self,
-        text: str,
-        language: str,
-    ) -> bytes:
+    async def _get_bakbak_audio(self, text: str, language: str) -> bytes:
         started = time.perf_counter()
-
-        url = "https://hub.getraya.app/v1/text-to-speech"
-
-        headers = {
-            "X-API-Key": self.bakbak_api_key,
-            "Content-Type": "application/json",
-        }
-
+        url = os.getenv("BAKBAK_TTS_URL", "https://hub.getraya.app/v1/text-to-speech")
+        headers = {"X-API-Key": self.bakbak_api_key, "Content-Type": "application/json"}
         payload = {
             "text": text,
             "voice_id": self.bakbak_voice_id,
-            "model": "m1",
+            "model": self.tts_model,
             "language": language,
             "codec": "wav",
             "sample_rate": 24000,
-            "speed": 1.0,
+            "speed": float(os.getenv("BAKBAK_TTS_SPEED", "1.0")),
         }
-
         async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(
-                url,
-                headers=headers,
-                json=payload,
-            )
+            response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             audio = response.content
-
         if audio[:4] == b"RIFF":
-            audio = audio[44:]
-
+            import io
+            import soundfile as sf
+            waveform, sample_rate = sf.read(io.BytesIO(audio), dtype="int16")
+            if waveform.ndim == 2:
+                waveform = waveform.mean(axis=1).astype("int16")
+            if sample_rate != 24000:
+                raise ValueError(f"Expected 24000 Hz TTS audio, received {sample_rate} Hz")
+            audio = waveform.tobytes()
         self.tts_audio_bytes = len(audio)
-        self.tts_latency_ms = round(
-            (time.perf_counter() - started) * 1000,
-            1,
-        )
+        self.tts_latency_ms = round((time.perf_counter() - started) * 1000, 1)
         return audio
 
     def _enqueue_output(self, pcm16_24k: bytes):
         """Push 24 kHz mono PCM into streamlit-webrtc's PcmAudioSource."""
         if len(pcm16_24k) % 2:
             raise ValueError("BakBak returned an odd-length PCM payload")
-
         if self.output_source is None:
             raise RuntimeError("WebRTC output source is not configured")
-
         self.output_source.push(pcm16_24k)
         self.output_bytes_pushed += len(pcm16_24k)
 
     def ingest_webrtc_frame(self, frame: av.AudioFrame):
         """Convert browser audio to mono 16 kHz signed PCM for Saaras."""
-
         self.audio_frames_received += 1
-
         for converted in self._input_resampler.resample(frame):
-            pcm = (
-                converted
-                .to_ndarray()
-                .astype(np.int16)
-                .tobytes()
-            )
+            pcm = converted.to_ndarray().astype(np.int16).tobytes()
             self.push_audio(pcm)
