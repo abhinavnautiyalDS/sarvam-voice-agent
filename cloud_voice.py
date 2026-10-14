@@ -241,7 +241,7 @@ class CloudVoiceAgent:
 
                 self.llm_status = "Generating response"
                 try:
-                    response = await self._get_llm_response(transcript)
+                    response = await self._get_llm_response(transcript, detected_language, result)
                 except Exception as exc:
                     self.error_stage = "LLM"
                     self.error = f"{type(exc).__name__}: {exc}"
@@ -328,9 +328,30 @@ class CloudVoiceAgent:
         }
         system_prompt = os.getenv(
             "VOICE_SYSTEM_PROMPT",
-            "You are a concise, natural voice assistant. Answer directly. Reply in the language "
-            "currently used by the user, using natural Hindi-English code-switching when the "
-            "user mixes them. Avoid markdown, bullets, and emojis.",
+            "You are a concise, natural voice assistant. Answer directly. Avoid markdown, bullets, and emojis.",
+        )
+        classifier_result = classifier_result or {}
+        classifier_label = str(classifier_result.get("label", "unavailable")).lower()
+        classifier_confidence = float(classifier_result.get("confidence", 0.0) or 0.0)
+        classifier_available = bool(classifier_result.get("available")) and classifier_label in {
+            "hindi", "english", "hinglish"
+        }
+        if classifier_available:
+            language_hint = (
+                f"Transcript classifier prediction: {classifier_label} "
+                f"(confidence {classifier_confidence:.1%})."
+            )
+        else:
+            language_hint = (
+                "Transcript classifier is uncertain or unavailable; do not force a language from it."
+            )
+        language_instruction = (
+            "Choose the reply language by prioritizing the actual words and script in the latest "
+            "user transcript. Use the classifier prediction as a helpful hint only when it is "
+            "confident. Treat Saaras language metadata as a secondary hint because it can be wrong. "
+            "If the user speaks Hindi, reply in natural Hindi; if English, reply in English; if "
+            "Hinglish, reply in natural conversational Hinglish. Do not translate the user's words "
+            "into another language unless asked. Do not assume a fixed primary or secondary language."
         )
         payload = {
             "model": self.llm_model,
@@ -338,8 +359,9 @@ class CloudVoiceAgent:
                 {
                     "role": "system",
                     "content": (
-                        f"{system_prompt} Do not assume a fixed primary or secondary language. "
-                        "Respond naturally in the language and style of the user's latest utterance."
+                        f"{system_prompt}\\n{language_instruction}\\n"
+                        f"Latest Saaras language metadata: {detected_language}.\\n"
+                        f"{language_hint}"
                     ),
                 },
                 {"role": "user", "content": user_text},
