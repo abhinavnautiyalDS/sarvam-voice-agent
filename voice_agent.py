@@ -39,7 +39,7 @@ class BakBakTTSService(TTSService):
         self.speed = speed
 
     async def run_tts(self, text: str):
-        url = "https://hub.getraya.app/v1/text-to-speech"
+        url = os.getenv("BAKBAK_TTS_URL", "https://hub.getraya.app/v1/text-to-speech")
         headers = {"X-API-Key": self.api_key, "Content-Type": "application/json"}
         payload = {
             "text": text,
@@ -55,7 +55,14 @@ class BakBakTTSService(TTSService):
             response.raise_for_status()
             audio_data = response.content
         if audio_data[:4] == b"RIFF":
-            audio_data = audio_data[44:]
+            import io
+            import soundfile as sf
+            waveform, rate = sf.read(io.BytesIO(audio_data), dtype="int16")
+            if waveform.ndim == 2:
+                waveform = waveform.mean(axis=1).astype("int16")
+            if rate != self._bakbak_sample_rate:
+                raise ValueError(f"Expected {self._bakbak_sample_rate} Hz TTS audio, got {rate} Hz")
+            audio_data = waveform.tobytes()
         await self.push_frame(TTSAudioRawFrame(
             audio=audio_data,
             sample_rate=self._bakbak_sample_rate,
@@ -70,68 +77,54 @@ async def run_voice_agent():
             audio_out_enabled=True,
             audio_in_sample_rate=16000,
             audio_in_channels=1,
-            input_device_index=4,
+            input_device_index=int(os.getenv("AUDIO_INPUT_DEVICE_INDEX", "4")),
         )
     )
-
     stt = SarvamRealtimeSTTService(
         api_key=SARVAM_API_KEY,
-        model="saaras:v3-realtime",
-        language_code="hi-IN",
-        endpointing="vad",
-        stream_type="fast",
-        mode="transcribe",
-        threshold=0.1,
-        silence_duration_ms=700,
-        min_speech_duration_ms=200,
+        model=os.getenv("SARVAM_STT_MODEL", "saaras:v3-realtime"),
+        language_code=os.getenv("SARVAM_STT_LANGUAGE", "unknown"),
+        endpointing=os.getenv("SARVAM_STT_ENDPOINTING", "vad"),
+        stream_type=os.getenv("SARVAM_STT_STREAM_TYPE", "fast"),
+        mode=os.getenv("SARVAM_STT_MODE", "transcribe"),
+        threshold=float(os.getenv("SARVAM_STT_THRESHOLD", "0.1")),
+        silence_duration_ms=int(os.getenv("SARVAM_SILENCE_DURATION_MS", "700")),
+        min_speech_duration_ms=int(os.getenv("SARVAM_MIN_SPEECH_DURATION_MS", "200")),
     )
-
     llm = SarvamLLMService(
         api_key=SARVAM_API_KEY,
-        base_url="https://api.sarvam.ai/v1",
+        base_url=os.getenv("SARVAM_LLM_BASE_URL", "https://api.sarvam.ai/v1"),
         settings=SarvamLLMService.Settings(
-            model="sarvam-105b",
-            system_instruction=(
-                "You are a helpful voice assistant. "
-                "The user primarily speaks Hindi and may mix English. "
-                "Reply naturally and briefly. "
-                "Do not use markdown, bullet points, or emojis."
+            model=os.getenv("SARVAM_LLM_MODEL", "sarvam-105b"),
+            system_instruction=os.getenv(
+                "VOICE_SYSTEM_PROMPT",
+                "You are a helpful voice assistant. The user primarily speaks Hindi and may mix "
+                "English. Reply naturally and briefly. Do not use markdown, bullets, or emojis.",
             ),
-            max_tokens=150,
+            max_tokens=int(os.getenv("SARVAM_LLM_MAX_TOKENS", "150")),
         ),
     )
-
     tts = BakBakTTSService(
         api_key=BAKBAK_API_KEY,
         voice_id=BAKBAK_VOICE_ID,
-        model="m1",
-        language="hi",
-        sample_rate=24000,
-        speed=1.0,
+        model=os.getenv("BAKBAK_TTS_MODEL", "m1"),
+        language=os.getenv("BAKBAK_TTS_LANGUAGE", "hi"),
+        sample_rate=int(os.getenv("BAKBAK_TTS_SAMPLE_RATE", "24000")),
+        speed=float(os.getenv("BAKBAK_TTS_SPEED", "1.0")),
     )
-
     context = LLMContext()
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context, user_params=LLMUserAggregatorParams()
     )
-
     pipeline = Pipeline([
-        transport.input(),
-        stt,
-        user_aggregator,
-        llm,
-        tts,
-        assistant_aggregator,
-        transport.output(),
+        transport.input(), stt, user_aggregator, llm, tts, assistant_aggregator, transport.output(),
     ])
-
     task = PipelineTask(
         pipeline,
         params=PipelineParams(allow_interruptions=True, enable_metrics=True),
     )
-
-    print("Voice agent started.")
-    print("Speak Hindi/Hinglish into the selected microphone.")
+    print("Voice agent started. Speak into the selected microphone.")
+    print("Note: transcript classifier diagnostics currently run in the Streamlit WebRTC path.")
     await PipelineRunner().run(task)
 
 
