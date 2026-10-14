@@ -180,7 +180,7 @@ if st.session_state.running and agent is not None:
             st.caption(f"Saaras language metadata: {agent.last_detected_language or 'unknown'}")
             st.caption(f"Detector comparison: {agent.last_language_source}")
         else:
-            st.caption(f"Classifier unavailable/disabled; Saaras remains primary. {classification.get('reason', '')}")
+            st.caption(f"Classifier unavailable/disabled. Saaras metadata is shown separately for comparison. {classification.get('reason', '')}")
 
         st.markdown("### 3. LLM response")
         if agent.last_assistant_text:
