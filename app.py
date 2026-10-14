@@ -10,6 +10,19 @@ from streamlit_webrtc import (
 )
 
 from cloud_voice import CloudVoiceAgent
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+def configured_secret(name: str, default: str | None = None) -> str | None:
+    """Read a Streamlit secret when configured, otherwise fall back to environment."""
+    try:
+        value = st.secrets.get(name)
+    except Exception:
+        value = None
+    return value or os.getenv(name) or default
+
 
 st.set_page_config(page_title="Sarvam Voice Agent", page_icon="🎤", layout="wide")
 st.title("🎤 Sarvam Voice Agent")
@@ -84,10 +97,24 @@ if st.button("Start voice agent", type="primary", disabled=st.session_state.runn
         pcm_output = create_pcm_audio_source_track(
             key=f"sarvam_voice_output_{generation}", sample_rate=24000, ptime=0.020,
         )
+        sarvam_key = configured_secret("SARVAM_API_KEY")
+        bakbak_key = configured_secret("BAKBAK_API_KEY")
+        voice_id = configured_secret("BAKBAK_VOICE_ID")
+        missing = [name for name, value in (
+            ("SARVAM_API_KEY", sarvam_key),
+            ("BAKBAK_API_KEY", bakbak_key),
+            ("BAKBAK_VOICE_ID", voice_id),
+        ) if not value]
+        if missing:
+            raise ValueError(
+                "Missing credentials: " + ", ".join(missing) +
+                ". Set them in Streamlit Secrets or your .env file."
+            )
+
         agent = CloudVoiceAgent(
-            st.secrets["SARVAM_API_KEY"],
-            st.secrets["BAKBAK_API_KEY"],
-            st.secrets["BAKBAK_VOICE_ID"],
+            sarvam_key,
+            bakbak_key,
+            voice_id,
             primary_language=lang_options[primary_language],
             secondary_language=lang_options[secondary_language],
             output_source=pcm_output,
@@ -115,7 +142,7 @@ agent = st.session_state.cloud_agent
 if st.session_state.running and agent is not None:
     pcm_output = st.session_state.pcm_output
     audio_sink = st.session_state.audio_sink
-    hf_token = st.secrets.get("HF_TOKEN", os.getenv("HF_TOKEN", ""))
+    hf_token = configured_secret("HF_TOKEN", "") or ""
     ice_servers = []
     if hf_token:
         try:
