@@ -20,7 +20,7 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Copy `.env.example` to `.env`, add your API credentials, and start the browser app:
+Copy `.env.example` to `.env`, add your API credentials, and start the browser app. The Streamlit app reads credentials from Streamlit Secrets first, then falls back to environment variables / `.env` for local development:
 
 ```bash
 streamlit run app.py
