@@ -57,6 +57,12 @@ Never commit API keys or `.env` files.
 
 The classifier was trained on public text corpora (COMI-LINGUA, PHINC, Tatoeba), not the target production STT transcripts. Its measured 84.03% corpus accuracy and 0.688 Hindi F1 are not a live-call accuracy guarantee. Validate on consented, anonymized transcripts from the target STT system before using this signal for production routing.
 
+## WebRTC / TURN setup
+
+For hosted deployments, STUN alone may fail on office, mobile, or restrictive NAT/firewall networks. The app now prefers Cloudflare Realtime TURN when both `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_KEY_API_TOKEN` are configured, then tries Hugging Face TURN, and finally falls back to Google STUN. You can also configure `TURN_SERVER_URL`, `TURN_SERVER_USERNAME`, and `TURN_SERVER_CREDENTIAL` for another TURN provider. Keep credentials in Streamlit Secrets or environment variables; never commit them.
+
+To configure Cloudflare, create a Realtime TURN key and an API token with permission to generate TURN credentials. Add both values to Streamlit Secrets, redeploy/restart, then click Stop and start a fresh WebRTC session. The dashboard now says whether microphone frames have actually reached Python; “session started” alone does not prove the audio track is flowing. TURN relay traffic may be billable depending on your provider.
+
 ## Troubleshooting
 
 The page displays WebRTC audio flow, Saaras transcript and event, classifier prediction/confidence/latency, LLM response/latency, and BakBak output/latency. Check browser microphone permissions and ICE/TURN connectivity if audio is not reaching STT. Check the raw STT event, LLM response, TTS response, and sample-rate handling if speech output is silent.
