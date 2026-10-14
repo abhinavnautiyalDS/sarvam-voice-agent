@@ -107,14 +107,51 @@ agent = st.session_state.cloud_agent
 if st.session_state.running and agent is not None:
     pcm_output = st.session_state.pcm_output
     audio_sink = st.session_state.audio_sink
-    hf_token = configured_secret("HF_TOKEN", "") or ""
-    ice_servers = []
-    if hf_token:
+    # TURN is needed on some hosted/network combinations. Prefer Cloudflare,
+    # then Hugging Face, then optional manually configured TURN; always retain STUN.
+    ice_servers = [{"urls": "stun:stun.l.google.com:19302"}]
+    turn_provider = "STUN fallback"
+    cloudflare_key_id = configured_secret("CLOUDFLARE_TURN_KEY_ID", "") or ""
+    cloudflare_api_token = configured_secret("CLOUDFLARE_TURN_KEY_API_TOKEN", "") or ""
+    if cloudflare_key_id and cloudflare_api_token:
         try:
-            ice_servers = get_hf_ice_servers(token=hf_token)
+            import httpx
+            response = httpx.post(
+                f"https://rtc.live.cloudflare.com/v1/turn/keys/{cloudflare_key_id}/credentials/generate-ice-servers",
+                headers={"Authorization": f"Bearer {cloudflare_api_token}"},
+                json={"ttl": 3600},
+                timeout=10,
+            )
+            response.raise_for_status()
+            cloudflare_servers = response.json().get("iceServers", [])
+            if cloudflare_servers:
+                ice_servers = cloudflare_servers + ice_servers
+                turn_provider = "Cloudflare TURN + STUN"
+            else:
+                st.warning("Cloudflare TURN returned no ICE servers; trying Hugging Face TURN.")
         except Exception as exc:
-            st.warning(f"HF TURN unavailable ({exc}). Using STUN only.")
-    ice_servers.append({"urls": "stun:stun.l.google.com:19302"})
+            st.warning(f"Cloudflare TURN unavailable ({type(exc).__name__}: {exc}); trying Hugging Face TURN.")
+    if turn_provider == "STUN fallback":
+        hf_token = configured_secret("HF_TOKEN", "") or ""
+        if hf_token:
+            try:
+                hf_servers = get_hf_ice_servers(token=hf_token)
+                if hf_servers:
+                    ice_servers = hf_servers + ice_servers
+                    turn_provider = "Hugging Face TURN + STUN"
+            except Exception as exc:
+                st.warning(f"HF TURN unavailable ({type(exc).__name__}: {exc}). STUN-only fallback is active.")
+    # Optional generic TURN server. Store credentials in Streamlit Secrets / env, never in code.
+    custom_turn_url = configured_secret("TURN_SERVER_URL", "") or ""
+    custom_turn_username = configured_secret("TURN_SERVER_USERNAME", "") or ""
+    custom_turn_credential = configured_secret("TURN_SERVER_CREDENTIAL", "") or ""
+    if custom_turn_url and custom_turn_username and custom_turn_credential:
+        ice_servers.insert(0, {
+            "urls": custom_turn_url,
+            "username": custom_turn_username,
+            "credential": custom_turn_credential,
+        })
+        turn_provider = "Custom TURN + STUN"
     rtc_config = {"iceServers": ice_servers}
     webrtc_ctx = webrtc_streamer(
         key=f"sarvam-voice-hf-{st.session_state.webrtc_generation}",
@@ -133,14 +170,16 @@ if st.session_state.running and agent is not None:
         frontend_rtc_configuration=rtc_config,
         server_rtc_configuration=rtc_config,
     )
-    st.caption("WebRTC ICE: Hugging Face TURN when configured + Google STUN fallback")
+    st.caption(f"WebRTC ICE: {turn_provider}. TURN relay is recommended for restrictive networks.")
 
     @st.fragment(run_every="1s")
     def live_diagnostics():
         playing = bool(webrtc_ctx.state.playing)
         receiving_audio = agent.audio_frames_received > 0
-        if playing or receiving_audio:
-            st.success("WebRTC: CONNECTED / RECEIVING AUDIO")
+        if receiving_audio:
+            st.success("WebRTC: MICROPHONE FRAMES RECEIVED")
+        elif playing:
+            st.warning("WebRTC session started, but no microphone frames have reached Python yet. Check browser mic permission, ICE/TURN connectivity, and the remote audio track.")
         else:
             st.warning("WebRTC: CONNECTING — waiting for browser audio.")
         if agent.error:
@@ -148,7 +187,7 @@ if st.session_state.running and agent is not None:
 
         st.subheader("Pipeline status")
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("WebRTC", "Receiving" if receiving_audio else "Waiting")
+        c1.metric("WebRTC", "Audio received" if receiving_audio else ("Session started" if playing else "Waiting"))
         c2.metric("Saaras STT", "Listening" if agent.stt_status in ("Connected — waiting for speech", "Listening") else agent.stt_status)
         c3.metric("Sarvam LLM", "Working" if agent.llm_status == "Generating response" else agent.llm_status)
         c4.metric("BakBak Raya", "Speaking" if agent.tts_status == "Generating speech with BakBak Raya" else agent.tts_status)
