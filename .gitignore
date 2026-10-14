@@ -4,3 +4,4 @@ __pycache__/
 .env
 *.wav
 .streamlit/
+models/language_classifier.joblib
