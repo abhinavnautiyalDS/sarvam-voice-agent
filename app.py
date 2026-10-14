@@ -36,46 +36,13 @@ if "pcm_output" not in st.session_state:
     st.session_state.pcm_output = None
 if "audio_sink" not in st.session_state:
     st.session_state.audio_sink = None
-if "primary_language" not in st.session_state:
-    st.session_state.primary_language = "Hindi"
-if "secondary_language" not in st.session_state:
-    st.session_state.secondary_language = "English"
-
-lang_options = {"Hindi": "hi-IN", "English": "en-IN", "Telugu": "te-IN"}
-
-st.subheader("Conversation language settings")
-col1, col2 = st.columns(2)
-with col1:
-    primary_language = st.selectbox(
-        "Primary language", list(lang_options),
-        index=list(lang_options).index(st.session_state.primary_language),
-        key="primary_language_select",
-        disabled=st.session_state.running,
-    )
-with col2:
-    secondary_choices = [name for name in lang_options if name != primary_language]
-    secondary_default = (
-        st.session_state.secondary_language
-        if st.session_state.secondary_language in secondary_choices
-        else secondary_choices[0]
-    )
-    secondary_language = st.selectbox(
-        "Secondary language", secondary_choices,
-        index=secondary_choices.index(secondary_default),
-        key="secondary_language_select",
-        disabled=st.session_state.running,
-    )
-st.session_state.primary_language = primary_language
-st.session_state.secondary_language = secondary_language
-st.caption(f"Allowed conversation languages: {primary_language} + {secondary_language}")
-
 st.subheader("Model settings")
 with st.expander("Advanced model and classifier settings", expanded=True):
     classifier_enabled = st.toggle(
         "Enable Hindi / English / Hinglish transcript classifier",
         value=True,
         disabled=st.session_state.running,
-        help="Advisory signal only. Saaras language metadata remains primary; a confident Hindi/English classification is fallback only when Saaras has no usable language tag.",
+        help="Runs independently on each final transcript so you can compare its prediction with Saaras language metadata. No primary/secondary language restriction is applied.",
     )
     llm_model = st.selectbox(
         "Sarvam LLM model",
@@ -115,8 +82,6 @@ if st.button("Start voice agent", type="primary", disabled=st.session_state.runn
             sarvam_key,
             bakbak_key,
             voice_id,
-            primary_language=lang_options[primary_language],
-            secondary_language=lang_options[secondary_language],
             output_source=pcm_output,
             llm_model=llm_model,
             tts_model=tts_model,
@@ -212,7 +177,8 @@ if st.session_state.running and agent is not None:
             cc3.metric("Inference latency", f"{classification.get('latency_ms', 0.0):.3f} ms")
             if classification.get("probabilities"):
                 st.json(classification["probabilities"])
-            st.caption(f"Language decision source: {agent.last_language_source}")
+            st.caption(f"Saaras language metadata: {agent.last_detected_language or 'unknown'}")
+            st.caption(f"Detector comparison: {agent.last_language_source}")
         else:
             st.caption(f"Classifier unavailable/disabled; Saaras remains primary. {classification.get('reason', '')}")
 
