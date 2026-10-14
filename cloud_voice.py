@@ -23,8 +23,6 @@ class CloudVoiceAgent:
         sarvam_api_key: str,
         bakbak_api_key: str,
         bakbak_voice_id: str,
-        primary_language: str = "hi-IN",
-        secondary_language: str = "en-IN",
         output_source=None,
         llm_model: str = "sarvam-105b-conversations",
         tts_model: str = "m1",
@@ -33,9 +31,6 @@ class CloudVoiceAgent:
         self.sarvam_api_key = sarvam_api_key
         self.bakbak_api_key = bakbak_api_key
         self.bakbak_voice_id = bakbak_voice_id
-        self.primary_language = primary_language
-        self.secondary_language = secondary_language
-        self.allowed_languages = {primary_language, secondary_language}
         self.output_source = output_source
         self.llm_model = llm_model
         self.tts_model = tts_model
@@ -219,47 +214,55 @@ class CloudVoiceAgent:
                     data = event.get("data")
                     if isinstance(data, dict):
                         detected_language = data.get("language")
-                detected_language = detected_language or "unknown"
+                detected_language = str(detected_language or "unknown")
                 self.last_detected_language = detected_language
-                self.last_language_source = "Saaras metadata"
 
-                # The text model is only a fallback if Saaras lacks a usable language.
-                # It never maps Hinglish to a locale: Hinglish is a diagnostic class.
-                if detected_language not in self.allowed_languages:
-                    result = self.last_classifier_result
-                    class_to_code = {"hindi": "hi-IN", "english": "en-IN"}
-                    candidate = class_to_code.get(result.get("label"))
-                    cutoff = float(os.getenv("LANGUAGE_CLASSIFIER_OVERRIDE_CONFIDENCE", "0.80"))
-                    if (
-                        result.get("available")
-                        and candidate in self.allowed_languages
-                        and result.get("confidence", 0.0) >= cutoff
-                    ):
-                        detected_language = candidate
-                        self.last_language_source = "Text classifier fallback"
-                    else:
-                        self.last_language_source = "Saaras unavailable/unsupported; classifier inconclusive"
-
-                if detected_language not in self.allowed_languages:
-                    allowed_names = {"hi-IN": "Hindi", "en-IN": "English", "te-IN": "Telugu"}
-                    allowed_text = " or ".join(
-                        allowed_names.get(code, code)
-                        for code in (self.primary_language, self.secondary_language)
-                    )
-                    response = f"I can speak {allowed_text} only."
-                    tts_language = "en"
+                # Keep Saaras metadata and our transcript classifier independent for evaluation.
+                # Neither result gates whether the user gets a response.
+                result = self.last_classifier_result
+                classifier_label = str(result.get("label", "unavailable"))
+                if not result.get("available"):
+                    self.last_language_source = "Classifier unavailable"
+                elif detected_language == "unknown":
+                    self.last_language_source = "Saaras metadata missing; classifier still evaluated"
                 else:
-                    self.llm_status = "Generating response"
-                    try:
-                        response = await self._get_llm_response(transcript, detected_language)
-                    except Exception as exc:
-                        self.error_stage = "LLM"
-                        self.error = f"{type(exc).__name__}: {exc}"
-                        self.llm_status = "Failed"
-                        self.pipeline_status = "LLM failed"
-                        continue
-                    tts_language = {"hi-IN": "hi", "en-IN": "en", "te-IN": "te"}.get(
-                        detected_language, "en"
+                    normalized_saaras = detected_language.lower()
+                    saaras_says_hindi = normalized_saaras.startswith(("hi", "hindi"))
+                    saaras_says_english = normalized_saaras.startswith(("en", "english"))
+                    if (
+                        (saaras_says_hindi and classifier_label == "hindi")
+                        or (saaras_says_english and classifier_label == "english")
+                    ):
+                        self.last_language_source = "Saaras and classifier agree"
+                    elif classifier_label == "uncertain":
+                        self.last_language_source = "Classifier uncertain"
+                    else:
+                        self.last_language_source = "Saaras/classifier differ — inspect transcript"
+
+                self.llm_status = "Generating response"
+                try:
+                    response = await self._get_llm_response(transcript)
+                except Exception as exc:
+                    self.error_stage = "LLM"
+                    self.error = f"{type(exc).__name__}: {exc}"
+                    self.llm_status = "Failed"
+                    self.pipeline_status = "LLM failed"
+                    continue
+
+                # Classifier output controls only the TTS voice language when it is usable.
+                # Hinglish is rendered with Hindi voice output; it is not a provider locale.
+                tts_language_by_class = {
+                    "hindi": "hi",
+                    "hinglish": "hi",
+                    "english": "en",
+                }
+                if result.get("available") and classifier_label in tts_language_by_class:
+                    tts_language = tts_language_by_class[classifier_label]
+                else:
+                    normalized_saaras = detected_language.lower()
+                    tts_language = (
+                        "hi" if normalized_saaras.startswith(("hi", "hindi"))
+                        else "en"
                     )
 
                 if not response:
@@ -315,7 +318,7 @@ class CloudVoiceAgent:
                 return value.strip()
         return ""
 
-    async def _get_llm_response(self, user_text: str, detected_language: str) -> str:
+    async def _get_llm_response(self, user_text: str) -> str:
         self.last_llm_input = user_text
         started = time.perf_counter()
         url = os.getenv("SARVAM_LLM_URL", "https://api.sarvam.ai/v1/chat/completions")
@@ -323,10 +326,6 @@ class CloudVoiceAgent:
             "api-subscription-key": self.sarvam_api_key,
             "Content-Type": "application/json",
         }
-        lang_names = {"hi-IN": "Hindi", "en-IN": "English", "te-IN": "Telugu"}
-        spoken = lang_names.get(detected_language, detected_language)
-        primary_name = lang_names.get(self.primary_language, self.primary_language)
-        secondary_name = lang_names.get(self.secondary_language, self.secondary_language)
         system_prompt = os.getenv(
             "VOICE_SYSTEM_PROMPT",
             "You are a concise, natural voice assistant. Answer directly. Reply in the language "
@@ -339,9 +338,8 @@ class CloudVoiceAgent:
                 {
                     "role": "system",
                     "content": (
-                        f"{system_prompt} Configured languages: {primary_name} and {secondary_name}. "
-                        f"The latest utterance was detected as {spoken}. Follow the language of "
-                        "each new utterance; do not force English when the user speaks Hindi/Hinglish."
+                        f"{system_prompt} Do not assume a fixed primary or secondary language. "
+                        "Respond naturally in the language and style of the user's latest utterance."
                     ),
                 },
                 {"role": "user", "content": user_text},
