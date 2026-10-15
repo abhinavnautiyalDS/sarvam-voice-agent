@@ -18,7 +18,7 @@ MODEL_URL = os.getenv(
     "https://raw.githubusercontent.com/abhinavnautiyalDS/hindi-english-language-classifier/main/models/english_hinglish_classifier.joblib",
 )
 MODEL_PATH = Path(
-    os.getenv("LANGUAGE_CLASSIFIER_MODEL_PATH", "models/english_hinglish_classifier.joblib")
+    os.getenv("LANGUAGE_CLASSIFIER_MODEL_PATH", "models/ml/english_hinglish_classifier.joblib")
 )
 _MODEL: Any | None = None
 _MODEL_ERROR = ""
