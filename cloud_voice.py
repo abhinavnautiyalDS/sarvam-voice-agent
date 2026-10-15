@@ -200,7 +200,7 @@ class CloudVoiceAgent:
 
                 if self.classifier_enabled:
                     classify_fn = classify_qwen_transcript if self.classifier_backend == "qwen_llm" else classify_ml_transcript
-                    self.last_classifier_result = classify_fn(transcript)
+                    self.last_classifier_result = await asyncio.to_thread(classify_fn, transcript)
                     result = self.last_classifier_result
                     confidence = result.get("confidence")
                     if result.get("available"):
