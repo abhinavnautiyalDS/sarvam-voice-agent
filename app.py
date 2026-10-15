@@ -26,7 +26,7 @@ def configured_secret(name: str, default: str | None = None) -> str | None:
 
 st.set_page_config(page_title="Sarvam Voice Agent", page_icon="🎤", layout="wide")
 st.title("🎤 Sarvam Voice Agent")
-st.caption("Browser Mic → Saaras STT → English/Hinglish classifier → conditional language routing → Sarvam LLM → BakBak Raya TTS → Browser Speaker")
+st.caption("Browser Mic → Saaras STT → selectable ML/Qwen LLM classifier → conditional language routing → Sarvam LLM → BakBak Raya TTS → Browser Speaker")
 
 if "cloud_agent" not in st.session_state:
     st.session_state.cloud_agent = None
@@ -39,11 +39,19 @@ if "audio_sink" not in st.session_state:
 st.subheader("Model settings")
 with st.expander("Advanced model and classifier settings", expanded=True):
     classifier_enabled = st.toggle(
-        "Enable Hindi / English / Hinglish transcript classifier",
+        "Enable transcript language classifier",
         value=True,
         disabled=st.session_state.running,
-        help="Classifies final transcripts: ENGLISH/HINGLISH update language, NEUTRAL preserves it, UNCERTAIN avoids switching, and OTHER triggers the Hindi/English-only fallback.",
+        help="Turn classification off to use conversation context and Saaras metadata only.",
     )
+    classifier_backend_label = st.selectbox(
+        "Language classifier backend",
+        ["ML classifier (fast, joblib)", "Qwen LoRA LLM (experimental, slower)"],
+        index=0,
+        disabled=st.session_state.running,
+        help="ML is the lightweight default. Qwen loads the fine-tuned Qwen2.5-0.5B base model plus your LoRA adapter on first use; it needs more RAM and does not provide calibrated confidence.",
+    )
+    classifier_backend = "qwen_llm" if classifier_backend_label.startswith("Qwen") else "ml"
     llm_model = st.selectbox(
         "Sarvam LLM model",
         ["sarvam-105b-conversations", "sarvam-105b"],
@@ -55,7 +63,7 @@ with st.expander("Advanced model and classifier settings", expanded=True):
         disabled=st.session_state.running,
         help="Select a model ID supported by your BakBak account.",
     )
-    st.caption("STT: Saaras v3 realtime. TTS: BakBak Raya. The classifier runs locally on each final transcript.")
+    st.caption("STT: Saaras v3 realtime. TTS: BakBak Raya. Only the selected classifier runs on each final transcript.")
 
 if st.button("Start voice agent", type="primary", disabled=st.session_state.running, use_container_width=True):
     try:
@@ -86,6 +94,7 @@ if st.button("Start voice agent", type="primary", disabled=st.session_state.runn
             llm_model=llm_model,
             tts_model=tts_model,
             classifier_enabled=classifier_enabled,
+            classifier_backend=classifier_backend,
         )
 
         def audio_sink_callback(frame):
@@ -212,7 +221,8 @@ if st.session_state.running and agent is not None:
         if classification.get("available"):
             cc1, cc2, cc3 = st.columns(3)
             cc1.metric("Predicted class", str(classification.get("label", "—")).upper())
-            cc2.metric("Confidence", f"{classification.get('confidence', 0.0):.1%}")
+            confidence = classification.get("confidence")
+            cc2.metric("Confidence", f"{confidence:.1%}" if confidence is not None else "N/A")
             cc3.metric("Inference latency", f"{classification.get('latency_ms', 0.0):.3f} ms")
             if classification.get("probabilities"):
                 st.json(classification["probabilities"])
