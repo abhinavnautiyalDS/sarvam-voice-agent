@@ -58,8 +58,10 @@ Never commit API keys or `.env` files.
 - STT defaults to `saaras:v3-realtime`; model ID and endpointing parameters can be configured with the `SARVAM_STT_*` environment variables.
 - The Streamlit LLM selector offers `sarvam-105b-conversations` and `sarvam-105b`; use only model IDs enabled for the Sarvam API key.
 - TTS defaults to BakBak Raya `m1`; voice ID is supplied by your BakBak account.
-- The classifier downloads its trained model from the public [Hindi-English classifier repository](https://github.com/abhinavnautiyalDS/hindi-english-language-classifier) on first use. Override `LANGUAGE_CLASSIFIER_MODEL_URL` or point `LANGUAGE_CLASSIFIER_MODEL_PATH` to a local model file.
-- `LANGUAGE_CLASSIFIER_MIN_CONFIDENCE` defaults to 0.60; low-confidence English/Hinglish predictions become `uncertain`. Neutral acknowledgements are handled separately and are never used as a language switch.
+- The Streamlit UI lets you select **ML classifier (fast, joblib)** or **Qwen LoRA LLM (experimental, slower)**. Only the selected classifier runs on each final transcript.
+- The ML classifier downloads its trained model from the public [Hindi-English classifier repository](https://github.com/abhinavnautiyalDS/hindi-english-language-classifier) on first use. Override `LANGUAGE_CLASSIFIER_MODEL_URL` or point `LANGUAGE_CLASSIFIER_MODEL_PATH` to a local model file.
+- The Qwen option downloads the adapter files from [hinglish-language-switch-llm](https://github.com/abhinavnautiyalDS/hinglish-language-switch-llm) on first use and loads the `Qwen/Qwen2.5-0.5B-Instruct` base model from Hugging Face. It requires more RAM and has a longer cold start; the app reports inference latency after the model is loaded. Qwen's generated class has no calibrated confidence score, so the UI shows confidence as N/A for this backend.
+- `LANGUAGE_CLASSIFIER_MIN_CONFIDENCE` defaults to 0.60 for the ML classifier; low-confidence English/Hinglish predictions become `uncertain`. Neutral acknowledgements are handled separately and are never used as a language switch.
 
 The classifier was trained on public text corpora (COMI-LINGUA, PHINC, Tatoeba), not your target production STT transcripts. The repository's benchmark report records corpus-only English/Hinglish metrics; these are not a live-call accuracy guarantee. Validate on consented, anonymized transcripts from the target STT system before relying on production routing.
 
