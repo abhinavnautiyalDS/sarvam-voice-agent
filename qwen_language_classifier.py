@@ -20,7 +20,7 @@ BASE_MODEL = os.getenv("HINGLISH_LLM_BASE_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
 ADAPTER_DIR = Path(
     os.getenv(
         "HINGLISH_LLM_ADAPTER_PATH",
-        str(Path(__file__).parent / "models" / "qwen-hinglish-lora"),
+        str(Path(__file__).parent / "models" / "llm"),
     )
 )
 ADAPTER_REPO_RAW = os.getenv(
