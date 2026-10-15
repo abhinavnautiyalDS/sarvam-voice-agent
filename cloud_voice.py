@@ -231,7 +231,7 @@ class CloudVoiceAgent:
                     saaras_says_hindi = normalized_saaras.startswith(("hi", "hindi"))
                     saaras_says_english = normalized_saaras.startswith(("en", "english"))
                     if (
-                        (saaras_says_hindi and classifier_label == "hindi")
+                        (saaras_says_hindi and classifier_label in {"hindi", "hinglish"})
                         or (saaras_says_english and classifier_label == "english")
                     ):
                         self.last_language_source = "Saaras and classifier agree"

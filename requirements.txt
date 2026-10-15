@@ -9,3 +9,4 @@ scikit-learn>=1.5
 joblib>=1.4
 soundfile>=0.12
 av
+pandas>=2.2,<3.0

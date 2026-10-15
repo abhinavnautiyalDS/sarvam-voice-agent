@@ -61,7 +61,7 @@ Never commit API keys or `.env` files.
 - The classifier downloads its trained model from the public [Hindi-English classifier repository](https://github.com/abhinavnautiyalDS/hindi-english-language-classifier) on first use. Override `LANGUAGE_CLASSIFIER_MODEL_URL` or point `LANGUAGE_CLASSIFIER_MODEL_PATH` to a local model file.
 - `LANGUAGE_CLASSIFIER_MIN_CONFIDENCE` defaults to 0.60; low-confidence English/Hinglish predictions become `uncertain`. Neutral acknowledgements are handled separately and are never used as a language switch.
 
-The classifier was trained on public text corpora (COMI-LINGUA, PHINC, Tatoeba), not the target production STT transcripts. Its measured 84.03% corpus accuracy and 0.688 Hindi F1 are not a live-call accuracy guarantee. Validate on consented, anonymized transcripts from the target STT system before using this signal for production routing.
+The classifier was trained on public text corpora (COMI-LINGUA, PHINC, Tatoeba), not your target production STT transcripts. The repository's benchmark report records corpus-only English/Hinglish metrics; these are not a live-call accuracy guarantee. Validate on consented, anonymized transcripts from the target STT system before relying on production routing.
 
 ## WebRTC / TURN setup
 
