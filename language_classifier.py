@@ -18,7 +18,7 @@ MODEL_URL = os.getenv(
     "https://raw.githubusercontent.com/abhinavnautiyalDS/hindi-english-language-classifier/main/models/english_hinglish_classifier.joblib",
 )
 MODEL_PATH = Path(
-    os.getenv("LANGUAGE_CLASSIFIER_MODEL_PATH", "models/language_classifier.joblib")
+    os.getenv("LANGUAGE_CLASSIFIER_MODEL_PATH", "models/english_hinglish_classifier.joblib")
 )
 _MODEL: Any | None = None
 _MODEL_ERROR = ""
@@ -64,16 +64,7 @@ def classify_transcript(text: str) -> dict[str, Any]:
     if len(clean) < int(os.getenv("LANGUAGE_CLASSIFIER_MIN_CHARS", "4")):
         return {"label": "uncertain", "confidence": 0.0, "probabilities": {}, "latency_ms": 0.0, "available": True, "reason": "transcript_too_short"}
     model = load_model()
-    if len(clean) < int(os.getenv("LANGUAGE_CLASSIFIER_MIN_CHARS", "4")):
-        return {
-            "label": "uncertain",
-            "confidence": 0.0,
-            "probabilities": {},
-            "latency_ms": 0.0,
-            "available": True,
-            "reason": "transcript_too_short",
-        }
-    model = load_model()
+
     if model is None:
         return {
             "label": "unavailable",
@@ -91,7 +82,9 @@ def classify_transcript(text: str) -> dict[str, Any]:
         confidence = float(probabilities[index])
         threshold = float(os.getenv("LANGUAGE_CLASSIFIER_MIN_CONFIDENCE", "0.60"))
         label = str(classes[index]).lower()
-        if confidence < threshold:
+        if label not in {"english", "hinglish", "other", "uncertain", "neutral"}:
+            label = "uncertain"
+        if confidence < threshold and label not in {"other", "neutral", "uncertain"}:
             label = "uncertain"
         return {
             "label": label,
