@@ -12,7 +12,8 @@ import httpx
 import numpy as np
 import websockets
 
-from language_classifier import classify_transcript
+from language_classifier import classify_transcript as classify_ml_transcript
+from qwen_language_classifier import classify_transcript as classify_qwen_transcript
 
 
 class CloudVoiceAgent:
@@ -27,6 +28,7 @@ class CloudVoiceAgent:
         llm_model: str = "sarvam-105b-conversations",
         tts_model: str = "m1",
         classifier_enabled: bool = True,
+        classifier_backend: str = "ml",
     ):
         self.sarvam_api_key = sarvam_api_key
         self.bakbak_api_key = bakbak_api_key
@@ -35,6 +37,7 @@ class CloudVoiceAgent:
         self.llm_model = llm_model
         self.tts_model = tts_model
         self.classifier_enabled = classifier_enabled
+        self.classifier_backend = classifier_backend if classifier_backend in {"ml", "qwen_llm"} else "ml"
         self.current_response_language = "hindi"
 
         self.audio_in = queue.Queue(maxsize=100)
@@ -54,7 +57,7 @@ class CloudVoiceAgent:
             "label": "unavailable", "confidence": 0.0, "probabilities": {},
             "latency_ms": 0.0, "available": False, "reason": "not_run",
         }
-        self.classifier_status = "Enabled" if classifier_enabled else "Disabled"
+        self.classifier_status = f"{self.classifier_backend.upper()} enabled" if classifier_enabled else "Disabled"
         self.last_user_text = ""
         self.live_transcript = ""
         self.last_assistant_text = ""
@@ -196,13 +199,15 @@ class CloudVoiceAgent:
                 self.error_stage = ""
 
                 if self.classifier_enabled:
-                    self.last_classifier_result = classify_transcript(transcript)
+                    classify_fn = classify_qwen_transcript if self.classifier_backend == "qwen_llm" else classify_ml_transcript
+                    self.last_classifier_result = classify_fn(transcript)
                     result = self.last_classifier_result
-                    self.classifier_status = (
-                        f"{result.get('label', 'unknown')} ({result.get('confidence', 0.0):.0%})"
-                        if result.get("available")
-                        else f"Unavailable; using Saaras ({result.get('reason', 'unknown')})"
-                    )
+                    confidence = result.get("confidence")
+                    if result.get("available"):
+                        confidence_text = f" ({confidence:.0%})" if confidence is not None else " (confidence N/A)"
+                        self.classifier_status = f"{self.classifier_backend.upper()}: {result.get('label', 'unknown')}{confidence_text}"
+                    else:
+                        self.classifier_status = f"{self.classifier_backend.upper()} unavailable ({result.get('reason', 'unknown')})"
                 else:
                     self.last_classifier_result = {
                         "label": "disabled", "confidence": 0.0, "probabilities": {},
@@ -337,11 +342,13 @@ class CloudVoiceAgent:
         )
         classifier_result = classifier_result or {}
         classifier_label = str(classifier_result.get("label", "unavailable")).lower()
-        classifier_confidence = float(classifier_result.get("confidence", 0.0) or 0.0)
+        classifier_confidence_value = classifier_result.get("confidence")
         classifier_available = bool(classifier_result.get("available"))
         current_language = getattr(self, "current_response_language", "hindi")
-        if classifier_available:
-            language_hint = f"Transcript classifier prediction: {classifier_label} (confidence {classifier_confidence:.1%})."
+        if classifier_available and classifier_confidence_value is not None:
+            language_hint = f"Transcript classifier prediction: {classifier_label} (confidence {float(classifier_confidence_value):.1%})."
+        elif classifier_available:
+            language_hint = f"Transcript classifier prediction: {classifier_label}; confidence is not calibrated for this generative classifier."
         else:
             language_hint = "Transcript classifier is unavailable; use the conversation context."
         if classifier_label == "neutral":
