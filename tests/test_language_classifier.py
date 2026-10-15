@@ -1,10 +1,10 @@
 from language_classifier import classify_transcript
 
 
-def test_short_transcript_is_uncertain_without_loading_model():
+def test_neutral_acknowledgement_preserves_language_without_loading_model():
     result = classify_transcript("hi")
-    assert result["label"] == "uncertain"
-    assert result["reason"] == "transcript_too_short"
+    assert result["label"] == "neutral"
+    assert result["reason"] == "neutral_acknowledgement"
 
 
 def test_result_has_stable_schema_for_regular_transcript():

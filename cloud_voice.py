@@ -35,6 +35,7 @@ class CloudVoiceAgent:
         self.llm_model = llm_model
         self.tts_model = tts_model
         self.classifier_enabled = classifier_enabled
+        self.current_response_language = "hindi"
 
         self.audio_in = queue.Queue(maxsize=100)
         self.running = False
@@ -239,9 +240,17 @@ class CloudVoiceAgent:
                     else:
                         self.last_language_source = "Saaras/classifier differ — inspect transcript"
 
+                classifier_label = str(result.get("label", "unavailable")).lower()
+                if result.get("available") and classifier_label in {"english", "hinglish"}:
+                    self.current_response_language = classifier_label
+
                 self.llm_status = "Generating response"
                 try:
-                    response = await self._get_llm_response(transcript, detected_language, result)
+                    if result.get("available") and classifier_label == "other":
+                        response = "I can speak Hindi or English only. Please continue in Hindi or English."
+                        self.last_llm_input = "[OTHER language detected; fixed language-support response]"
+                    else:
+                        response = await self._get_llm_response(transcript, detected_language, result)
                 except Exception as exc:
                     self.error_stage = "LLM"
                     self.error = f"{type(exc).__name__}: {exc}"
@@ -251,19 +260,13 @@ class CloudVoiceAgent:
 
                 # Classifier output controls only the TTS voice language when it is usable.
                 # Hinglish is rendered with Hindi voice output; it is not a provider locale.
-                tts_language_by_class = {
-                    "hindi": "hi",
-                    "hinglish": "hi",
-                    "english": "en",
-                }
+                tts_language_by_class = {"hindi": "hi", "hinglish": "hi", "english": "en"}
                 if result.get("available") and classifier_label in tts_language_by_class:
                     tts_language = tts_language_by_class[classifier_label]
+                elif result.get("available") and classifier_label == "other":
+                    tts_language = "en"
                 else:
-                    normalized_saaras = detected_language.lower()
-                    tts_language = (
-                        "hi" if normalized_saaras.startswith(("hi", "hindi"))
-                        else "en"
-                    )
+                    tts_language = "en" if self.current_response_language == "english" else "hi"
 
                 if not response:
                     self.error_stage = "LLM"
@@ -335,26 +338,27 @@ class CloudVoiceAgent:
         classifier_result = classifier_result or {}
         classifier_label = str(classifier_result.get("label", "unavailable")).lower()
         classifier_confidence = float(classifier_result.get("confidence", 0.0) or 0.0)
-        classifier_available = bool(classifier_result.get("available")) and classifier_label in {
-            "hindi", "english", "hinglish"
-        }
+        classifier_available = bool(classifier_result.get("available"))
+        current_language = getattr(self, "current_response_language", "hindi")
         if classifier_available:
-            language_hint = (
-                f"Transcript classifier prediction: {classifier_label} "
-                f"(confidence {classifier_confidence:.1%})."
+            language_hint = f"Transcript classifier prediction: {classifier_label} (confidence {classifier_confidence:.1%})."
+        else:
+            language_hint = "Transcript classifier is unavailable; use the conversation context."
+        if classifier_label == "neutral":
+            language_instruction = (
+                f"The latest turn is NEUTRAL (a greeting or acknowledgement). Do not treat it as a language switch. "
+                f"Continue in the current conversation language: {current_language}. Do not infer a new language from this turn."
+            )
+        elif classifier_label == "uncertain":
+            language_instruction = (
+                f"The latest turn is UNCERTAIN. Preserve the current conversation language ({current_language}); "
+                "do not switch based on this turn. Ask a brief clarification only if necessary."
             )
         else:
-            language_hint = (
-                "Transcript classifier is uncertain or unavailable; do not force a language from it."
+            language_instruction = (
+                "Use the classifier for language routing. For ENGLISH, reply in English; for HINGLISH, reply in natural conversational Hinglish. "
+                "Devanagari Hindi is routed to HINGLISH by this product policy. Do not translate unless asked. Keep replies brief and natural."
             )
-        language_instruction = (
-            "Choose the reply language by prioritizing the actual words and script in the latest "
-            "user transcript. Use the classifier prediction as a helpful hint only when it is "
-            "confident. Treat Saaras language metadata as a secondary hint because it can be wrong. "
-            "If the user speaks Hindi, reply in natural Hindi; if English, reply in English; if "
-            "Hinglish, reply in natural conversational Hinglish. Do not translate the user's words "
-            "into another language unless asked. Do not assume a fixed primary or secondary language."
-        )
         payload = {
             "model": self.llm_model,
             "messages": [

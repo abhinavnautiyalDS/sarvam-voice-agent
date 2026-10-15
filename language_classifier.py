@@ -15,7 +15,7 @@ import httpx
 
 MODEL_URL = os.getenv(
     "LANGUAGE_CLASSIFIER_MODEL_URL",
-    "https://raw.githubusercontent.com/abhinavnautiyalDS/hindi-english-language-classifier/main/models/language_classifier.joblib",
+    "https://raw.githubusercontent.com/abhinavnautiyalDS/hindi-english-language-classifier/main/models/english_hinglish_classifier.joblib",
 )
 MODEL_PATH = Path(
     os.getenv("LANGUAGE_CLASSIFIER_MODEL_PATH", "models/language_classifier.joblib")
@@ -56,7 +56,14 @@ def classify_transcript(text: str) -> dict[str, Any]:
     """Return label/confidence/probabilities with measured inference latency."""
     import time
 
+    started = time.perf_counter()
     clean = " ".join(str(text or "").strip().lower().split())
+    neutral_words = {"hello", "hi", "hey", "bye", "goodbye", "thanks", "thank you", "okay", "ok", "yes", "no", "sure", "please", "right", "correct", "great", "fine", "hmm", "hmm okay", "okay sir", "ok sir", "yes sir", "no sir", "thank you sir"}
+    if clean in neutral_words:
+        return {"label": "neutral", "confidence": 1.0, "probabilities": {"neutral": 1.0}, "latency_ms": round((time.perf_counter() - started) * 1000, 3), "available": True, "reason": "neutral_acknowledgement"}
+    if len(clean) < int(os.getenv("LANGUAGE_CLASSIFIER_MIN_CHARS", "4")):
+        return {"label": "uncertain", "confidence": 0.0, "probabilities": {}, "latency_ms": 0.0, "available": True, "reason": "transcript_too_short"}
+    model = load_model()
     if len(clean) < int(os.getenv("LANGUAGE_CLASSIFIER_MIN_CHARS", "4")):
         return {
             "label": "uncertain",
@@ -83,7 +90,7 @@ def classify_transcript(text: str) -> dict[str, Any]:
         index = int(probabilities.argmax())
         confidence = float(probabilities[index])
         threshold = float(os.getenv("LANGUAGE_CLASSIFIER_MIN_CONFIDENCE", "0.60"))
-        label = str(classes[index])
+        label = str(classes[index]).lower()
         if confidence < threshold:
             label = "uncertain"
         return {

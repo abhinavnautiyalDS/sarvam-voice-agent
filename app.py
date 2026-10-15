@@ -26,7 +26,7 @@ def configured_secret(name: str, default: str | None = None) -> str | None:
 
 st.set_page_config(page_title="Sarvam Voice Agent", page_icon="🎤", layout="wide")
 st.title("🎤 Sarvam Voice Agent")
-st.caption("Browser Mic → Saaras STT → Hindi/English/Hinglish classifier → Sarvam LLM → BakBak Raya TTS → Browser Speaker")
+st.caption("Browser Mic → Saaras STT → English/Hinglish classifier → conditional language routing → Sarvam LLM → BakBak Raya TTS → Browser Speaker")
 
 if "cloud_agent" not in st.session_state:
     st.session_state.cloud_agent = None
@@ -42,7 +42,7 @@ with st.expander("Advanced model and classifier settings", expanded=True):
         "Enable Hindi / English / Hinglish transcript classifier",
         value=True,
         disabled=st.session_state.running,
-        help="Runs independently on each final transcript so you can compare its prediction with Saaras language metadata. No primary/secondary language restriction is applied.",
+        help="Classifies final transcripts: ENGLISH/HINGLISH update language, NEUTRAL preserves it, UNCERTAIN avoids switching, and OTHER triggers the Hindi/English-only fallback.",
     )
     llm_model = st.selectbox(
         "Sarvam LLM model",

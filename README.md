@@ -4,7 +4,13 @@ Browser-based, real-time Hindi/English voice-agent pipeline with Streamlit and W
 
 ## Pipeline
 
-Browser microphone → WebRTC → **Sarvam Saaras v3 realtime STT** → **Hindi/English/Hinglish transcript classifier** → **Sarvam LLM** → **BakBak Raya TTS** → browser speaker.
+Browser microphone → WebRTC → **Sarvam Saaras v3 realtime STT** → **English/Hinglish classifier** → conditional routing → **Sarvam LLM** → **BakBak Raya TTS** → browser speaker.
+
+- `english`: update conversation language to English and reply in English.
+- `hinglish`: update conversation language to Hinglish and reply in natural Hinglish.
+- `neutral`: pass the label to the LLM and explicitly preserve the current conversation language; do not switch on greetings/acknowledgements such as “hello”, “okay”, or “thanks”.
+- `uncertain`: preserve the current language and clarify only if needed.
+- `other`: bypass the LLM and say: “I can speak Hindi or English only. Please continue in Hindi or English.”
 
 The classifier runs independently on each finalized STT transcript and reports class, confidence, probabilities, and inference latency. The dashboard shows the classifier result alongside Saaras language metadata so you can inspect agreements and disagreements. There are no primary/secondary language selectors and no language gate: every non-empty final transcript can proceed to the LLM. For TTS only, `hindi` and `hinglish` select Hindi voice output, while `english` selects English; uncertain predictions fall back to Saaras metadata.
 
@@ -32,7 +38,7 @@ For a microphone connected directly to the Python machine, use the local Pipecat
 python voice_agent.py
 ```
 
-Note: live classifier comparison is wired into the Streamlit WebRTC bridge. `voice_agent.py` remains the local Pipecat route and does not use the classifier for language gating.
+The browser WebRTC route uses the classifier for conditional language routing. The separate `voice_agent.py` local Pipecat runner has not been wired to this classifier yet.
 
 ## Streamlit Cloud secrets
 
@@ -53,7 +59,7 @@ Never commit API keys or `.env` files.
 - The Streamlit LLM selector offers `sarvam-105b-conversations` and `sarvam-105b`; use only model IDs enabled for the Sarvam API key.
 - TTS defaults to BakBak Raya `m1`; voice ID is supplied by your BakBak account.
 - The classifier downloads its trained model from the public [Hindi-English classifier repository](https://github.com/abhinavnautiyalDS/hindi-english-language-classifier) on first use. Override `LANGUAGE_CLASSIFIER_MODEL_URL` or point `LANGUAGE_CLASSIFIER_MODEL_PATH` to a local model file.
-- `LANGUAGE_CLASSIFIER_MIN_CONFIDENCE` defaults to 0.60; predictions below the threshold are shown as `uncertain`.
+- `LANGUAGE_CLASSIFIER_MIN_CONFIDENCE` defaults to 0.60; low-confidence English/Hinglish predictions become `uncertain`. Neutral acknowledgements are handled separately and are never used as a language switch.
 
 The classifier was trained on public text corpora (COMI-LINGUA, PHINC, Tatoeba), not the target production STT transcripts. Its measured 84.03% corpus accuracy and 0.688 Hindi F1 are not a live-call accuracy guarantee. Validate on consented, anonymized transcripts from the target STT system before using this signal for production routing.
 
