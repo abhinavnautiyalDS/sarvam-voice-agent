@@ -13,7 +13,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 REPO = "abhinavnautiyalDS/hinglish-language-switch-llm"
 BRANCH = "script-classifier-dataset"
 MODEL_PATH = "artifacts/script_classifier_bert_tiny/model"
-MODEL_DIR = Path(os.getenv("SCRIPT_CLASSIFIER_CACHE", ".script_classifier_cache"))
+MODEL_DIR = Path(os.getenv("SCRIPT_CLASSIFIER_CACHE", ".script_classifier_cache_hinglish_v2"))
 MAX_LENGTH = 96
 
 _FILES = (
