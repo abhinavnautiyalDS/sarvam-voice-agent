@@ -248,11 +248,7 @@ class CloudVoiceAgent:
 
                 self.llm_status = "Generating response"
                 try:
-                    if result.get("available") and classifier_label == "other":
-                        response = "I can speak Hindi or English only. Please continue in Hindi or English."
-                        self.last_llm_input = "[OTHER language detected; fixed language-support response]"
-                    else:
-                        response = await self._get_llm_response(transcript, detected_language, result)
+                    response = await self._get_llm_response(transcript, detected_language, result)
                 except Exception as exc:
                     self.error_stage = "LLM"
                     self.error = f"{type(exc).__name__}: {exc}"
@@ -336,7 +332,7 @@ class CloudVoiceAgent:
             "You are a concise, natural voice assistant. Answer directly. Avoid markdown, bullets, and emojis.",
         )
         classifier_result = classifier_result or {}
-        classifier_label = str(classifier_result.get("label", "unavailable")).lower()
+        classifier_label = str(classifier_result.get("label", "unavailable")).upper()
         classifier_confidence_value = classifier_result.get("confidence")
         classifier_available = bool(classifier_result.get("available"))
         current_language = getattr(self, "current_response_language", "hindi")
