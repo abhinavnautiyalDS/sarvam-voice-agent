@@ -12,7 +12,7 @@ Browser microphone → WebRTC → **Sarvam Saaras v3 realtime STT** → **fine-t
 - `uncertain`: preserve the current language and clarify only if needed.
 - `other`: bypass the LLM and say: “I can speak Hindi or English only. Please continue in Hindi or English.”
 
-The BERT-Tiny classifier runs on each finalized STT transcript and reports dominant writing script, both softmax scores, top-class score, and inference latency. Its model files are downloaded from the `full-project-backup` branch of [script-switch-classifier](https://github.com/abhinavnautiyalDS/script-switch-classifier) on first use and cached locally. `DEVANAGARI` routes the reply/TTS toward Hindi; `LATIN` routes toward English. This model classifies writing script, not natural language: Latin-script Hindi/Hinglish can be mistaken for English, so treat routing as a script-based heuristic. Every non-empty transcript still proceeds to the LLM.
+The BERT-Tiny classifier runs on each finalized STT transcript and reports dominant writing script, both softmax scores, top-class score, and inference latency. Its model files are downloaded from the `script-classifier-dataset` branch of [hinglish-language-switch-llm](https://github.com/abhinavnautiyalDS/hinglish-language-switch-llm/tree/script-classifier-dataset/artifacts/script_classifier_bert_tiny/model) on first use and cached locally. `DEVANAGARI` routes the reply/TTS toward Hindi; `LATIN` routes toward English. This model classifies writing script, not natural language: Latin-script Hindi/Hinglish can be mistaken for English, so treat routing as a script-based heuristic. Every non-empty transcript still proceeds to the LLM.
 
 ## Install and run
 
@@ -61,7 +61,7 @@ Never commit API keys or `.env` files.
 - The Streamlit app uses only the fine-tuned BERT-Tiny script classifier; the old joblib and Qwen-LoRA backend selectors have been removed from the UI.
 - BERT-Tiny reports `DEVANAGARI` and `LATIN` probabilities. These are softmax scores and are not guaranteed to be calibrated confidence estimates.
 
-The script classifier was trained on public text corpora and should be evaluated on consented, anonymized transcripts from your target STT system before relying on production routing. It predicts dominant script only; it does not distinguish English from Hinglish when both are written in Latin characters.
+The fine-tuned BERT-Tiny weights are maintained in the `hinglish-language-switch-llm` repository and are fetched lazily on first classifier use. The model was evaluated on held-out data, but it should also be evaluated on consented, anonymized transcripts from your target STT system before relying on production routing. It predicts dominant script only; it does not distinguish English from Hinglish when both are written in Latin characters.
 
 ## WebRTC / TURN setup
 
