@@ -26,7 +26,7 @@ def configured_secret(name: str, default: str | None = None) -> str | None:
 
 st.set_page_config(page_title="Sarvam Voice Agent", page_icon="🎤", layout="wide")
 st.title("🎤 Sarvam Voice Agent")
-st.caption("Browser Mic → Saaras STT → selectable ML/Qwen LLM classifier → conditional language routing → Sarvam LLM → BakBak Raya TTS → Browser Speaker")
+st.caption("Browser Mic → Saaras STT → fine-tuned BERT-Tiny script classifier → Sarvam LLM → BakBak Raya TTS → Browser Speaker")
 
 if "cloud_agent" not in st.session_state:
     st.session_state.cloud_agent = None
@@ -37,21 +37,7 @@ if "pcm_output" not in st.session_state:
 if "audio_sink" not in st.session_state:
     st.session_state.audio_sink = None
 st.subheader("Model settings")
-with st.expander("Advanced model and classifier settings", expanded=True):
-    classifier_enabled = st.toggle(
-        "Enable transcript language classifier",
-        value=True,
-        disabled=st.session_state.running,
-        help="Turn classification off to use conversation context and Saaras metadata only.",
-    )
-    classifier_backend_label = st.selectbox(
-        "Language classifier backend",
-        ["ML classifier (fast, joblib)", "Qwen LoRA LLM (experimental, slower)"],
-        index=0,
-        disabled=st.session_state.running,
-        help="ML is the lightweight default. Qwen loads the fine-tuned Qwen2.5-0.5B base model plus your LoRA adapter on first use; it needs more RAM and does not provide calibrated confidence.",
-    )
-    classifier_backend = "qwen_llm" if classifier_backend_label.startswith("Qwen") else "ml"
+with st.expander("Voice model settings", expanded=True):
     llm_model = st.selectbox(
         "Sarvam LLM model",
         ["sarvam-105b-conversations", "sarvam-105b"],
@@ -63,7 +49,7 @@ with st.expander("Advanced model and classifier settings", expanded=True):
         disabled=st.session_state.running,
         help="Select a model ID supported by your BakBak account.",
     )
-    st.caption("STT: Saaras v3 realtime. TTS: BakBak Raya. Only the selected classifier runs on each final transcript.")
+    st.info("Script classification is fixed to your fine-tuned BERT-Tiny model (DEVANAGARI vs LATIN). Other classifier backends have been removed.")
 
 if st.button("Start voice agent", type="primary", disabled=st.session_state.running, use_container_width=True):
     try:
@@ -93,8 +79,8 @@ if st.button("Start voice agent", type="primary", disabled=st.session_state.runn
             output_source=pcm_output,
             llm_model=llm_model,
             tts_model=tts_model,
-            classifier_enabled=classifier_enabled,
-            classifier_backend=classifier_backend,
+            classifier_enabled=True,
+            classifier_backend="bert_tiny",
         )
 
         def audio_sink_callback(frame):
@@ -200,7 +186,7 @@ if st.session_state.running and agent is not None:
         c2.metric("Saaras STT", "Listening" if agent.stt_status in ("Connected — waiting for speech", "Listening") else agent.stt_status)
         c3.metric("Sarvam LLM", "Working" if agent.llm_status == "Generating response" else agent.llm_status)
         c4.metric("BakBak Raya", "Speaking" if agent.tts_status == "Generating speech with BakBak Raya" else agent.tts_status)
-        c5.metric("Classifier", agent.classifier_status)
+        c5.metric("BERT-Tiny classifier", agent.classifier_status)
 
         st.write(f"**Audio:** {agent.audio_frames_received:,} browser frames / {agent.audio_bytes_sent:,} bytes sent to Saaras")
         st.write(f"**Last Saaras event:** `{agent.last_stt_event or '—'}`")
@@ -216,18 +202,18 @@ if st.session_state.running and agent is not None:
             st.warning("Saaras sent a final transcript event, but no transcript text was found.")
             st.caption(f"Raw Saaras event: {agent.last_stt_raw}")
 
-        st.markdown("### 2. Language classifier")
+        st.markdown("### 2. BERT-Tiny script classifier")
         classification = agent.last_classifier_result
         if classification.get("available"):
             cc1, cc2, cc3 = st.columns(3)
-            cc1.metric("Predicted class", str(classification.get("label", "—")).upper())
+            cc1.metric("Predicted script", str(classification.get("label", "—")).upper())
             confidence = classification.get("confidence")
-            cc2.metric("Confidence", f"{confidence:.1%}" if confidence is not None else "N/A")
+            cc2.metric("Top-class score", f"{confidence:.1%}" if confidence is not None else "N/A")
             cc3.metric("Inference latency", f"{classification.get('latency_ms', 0.0):.3f} ms")
             if classification.get("probabilities"):
                 st.json(classification["probabilities"])
             st.caption(f"Saaras language metadata: {agent.last_detected_language or 'unknown'}")
-            st.caption(f"Detector comparison: {agent.last_language_source}")
+            st.caption(f"Comparison with Saaras metadata: {agent.last_language_source}")
         else:
             st.caption(f"Classifier unavailable/disabled. Saaras metadata is shown separately for comparison. {classification.get('reason', '')}")
 
@@ -294,4 +280,4 @@ st.code(
     'LANGUAGE_CLASSIFIER_OVERRIDE_CONFIDENCE="0.80"',
     language="toml",
 )
-st.caption("HF_TOKEN obtains temporary TURN credentials. The language classifier downloads its model on first use unless LANGUAGE_CLASSIFIER_MODEL_PATH points to a local copy. Never commit API keys.")
+st.caption("HF_TOKEN obtains temporary TURN credentials. BERT-Tiny model files download on first use and are cached locally. Never commit API keys.")
