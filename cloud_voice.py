@@ -127,7 +127,7 @@ class CloudVoiceAgent:
             "language_code": "auto",
             "model": os.getenv("SARVAM_STT_MODEL", "saaras:v3-realtime"),
             "stream_type": os.getenv("SARVAM_STT_STREAM_TYPE", "fast"),
-            "mode": os.getenv("SARVAM_STT_MODE", "verbatim"),
+            "mode": os.getenv("SARVAM_STT_MODE", "codemix"),
             "endpointing": "vad",
             "encoding": "linear16",
             "sample_rate": "16000",
