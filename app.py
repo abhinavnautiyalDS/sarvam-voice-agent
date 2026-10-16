@@ -275,9 +275,7 @@ st.code(
     'SARVAM_API_KEY="..."\n'
     'BAKBAK_API_KEY="..."\n'
     'BAKBAK_VOICE_ID="..."\n'
-    'HF_TOKEN="hf_..."\n'
-    'LANGUAGE_CLASSIFIER_MIN_CONFIDENCE="0.60"\n'
-    'LANGUAGE_CLASSIFIER_OVERRIDE_CONFIDENCE="0.80"',
+    'HF_TOKEN="hf_..."',
     language="toml",
 )
 st.caption("HF_TOKEN obtains temporary TURN credentials. BERT-Tiny model files download on first use and are cached locally. Never commit API keys.")
