@@ -12,8 +12,7 @@ import httpx
 import numpy as np
 import websockets
 
-from language_classifier import classify_transcript as classify_ml_transcript
-from qwen_language_classifier import classify_transcript as classify_qwen_transcript
+from script_classifier import classify_transcript as classify_script_transcript
 
 
 class CloudVoiceAgent:
@@ -37,7 +36,7 @@ class CloudVoiceAgent:
         self.llm_model = llm_model
         self.tts_model = tts_model
         self.classifier_enabled = classifier_enabled
-        self.classifier_backend = classifier_backend if classifier_backend in {"ml", "qwen_llm"} else "ml"
+        self.classifier_backend = "bert_tiny"
         self.current_response_language = "hindi"
 
         self.audio_in = queue.Queue(maxsize=100)
@@ -57,7 +56,7 @@ class CloudVoiceAgent:
             "label": "unavailable", "confidence": 0.0, "probabilities": {},
             "latency_ms": 0.0, "available": False, "reason": "not_run",
         }
-        self.classifier_status = f"{self.classifier_backend.upper()} enabled" if classifier_enabled else "Disabled"
+        self.classifier_status = "BERT-Tiny script classifier enabled" if classifier_enabled else "Disabled"
         self.last_user_text = ""
         self.live_transcript = ""
         self.last_assistant_text = ""
@@ -199,15 +198,14 @@ class CloudVoiceAgent:
                 self.error_stage = ""
 
                 if self.classifier_enabled:
-                    classify_fn = classify_qwen_transcript if self.classifier_backend == "qwen_llm" else classify_ml_transcript
-                    self.last_classifier_result = await asyncio.to_thread(classify_fn, transcript)
+                    self.last_classifier_result = await asyncio.to_thread(classify_script_transcript, transcript)
                     result = self.last_classifier_result
                     confidence = result.get("confidence")
                     if result.get("available"):
-                        confidence_text = f" ({confidence:.0%})" if confidence is not None else " (confidence N/A)"
-                        self.classifier_status = f"{self.classifier_backend.upper()}: {result.get('label', 'unknown')}{confidence_text}"
+                        confidence_text = f" ({confidence:.0%})" if confidence is not None else " (score N/A)"
+                        self.classifier_status = f"BERT-Tiny: {result.get('label', 'unknown')}{confidence_text}"
                     else:
-                        self.classifier_status = f"{self.classifier_backend.upper()} unavailable ({result.get('reason', 'unknown')})"
+                        self.classifier_status = f"BERT-Tiny unavailable ({result.get('reason', 'unknown')})"
                 else:
                     self.last_classifier_result = {
                         "label": "disabled", "confidence": 0.0, "probabilities": {},
@@ -223,31 +221,30 @@ class CloudVoiceAgent:
                 detected_language = str(detected_language or "unknown")
                 self.last_detected_language = detected_language
 
-                # Keep Saaras metadata and our transcript classifier independent for evaluation.
-                # Neither result gates whether the user gets a response.
+                # BERT-Tiny predicts writing script, not natural language.
+                # Devanagari routes to Hindi voice output; Latin routes to English voice output.
+                # Latin-script Hinglish is therefore a known limitation of this binary classifier.
                 result = self.last_classifier_result
-                classifier_label = str(result.get("label", "unavailable"))
+                classifier_label = str(result.get("label", "unavailable")).upper()
                 if not result.get("available"):
-                    self.last_language_source = "Classifier unavailable"
+                    self.last_language_source = "BERT-Tiny unavailable"
                 elif detected_language == "unknown":
-                    self.last_language_source = "Saaras metadata missing; classifier still evaluated"
+                    self.last_language_source = "Saaras metadata missing; BERT-Tiny script prediction used"
                 else:
                     normalized_saaras = detected_language.lower()
                     saaras_says_hindi = normalized_saaras.startswith(("hi", "hindi"))
                     saaras_says_english = normalized_saaras.startswith(("en", "english"))
-                    if (
-                        (saaras_says_hindi and classifier_label in {"hindi", "hinglish"})
-                        or (saaras_says_english and classifier_label == "english")
+                    if (saaras_says_hindi and classifier_label == "DEVANAGARI") or (
+                        saaras_says_english and classifier_label == "LATIN"
                     ):
-                        self.last_language_source = "Saaras and classifier agree"
-                    elif classifier_label == "uncertain":
-                        self.last_language_source = "Classifier uncertain"
+                        self.last_language_source = "Saaras metadata broadly agrees with script"
                     else:
-                        self.last_language_source = "Saaras/classifier differ — inspect transcript"
+                        self.last_language_source = "Saaras metadata and script prediction differ"
 
-                classifier_label = str(result.get("label", "unavailable")).lower()
-                if result.get("available") and classifier_label in {"english", "hinglish"}:
-                    self.current_response_language = classifier_label
+                if result.get("available") and classifier_label == "DEVANAGARI":
+                    self.current_response_language = "hindi"
+                elif result.get("available") and classifier_label == "LATIN":
+                    self.current_response_language = "english"
 
                 self.llm_status = "Generating response"
                 try:
@@ -265,11 +262,9 @@ class CloudVoiceAgent:
 
                 # Classifier output controls only the TTS voice language when it is usable.
                 # Hinglish is rendered with Hindi voice output; it is not a provider locale.
-                tts_language_by_class = {"hindi": "hi", "hinglish": "hi", "english": "en"}
-                if result.get("available") and classifier_label in tts_language_by_class:
-                    tts_language = tts_language_by_class[classifier_label]
-                elif result.get("available") and classifier_label == "other":
-                    tts_language = "en"
+                tts_language_by_script = {"DEVANAGARI": "hi", "LATIN": "en"}
+                if result.get("available") and classifier_label in tts_language_by_script:
+                    tts_language = tts_language_by_script[classifier_label]
                 else:
                     tts_language = "en" if self.current_response_language == "english" else "hi"
 
@@ -351,20 +346,21 @@ class CloudVoiceAgent:
             language_hint = f"Transcript classifier prediction: {classifier_label}; confidence is not calibrated for this generative classifier."
         else:
             language_hint = "Transcript classifier is unavailable; use the conversation context."
-        if classifier_label == "neutral":
+        if classifier_label == "DEVANAGARI":
             language_instruction = (
-                f"The latest turn is NEUTRAL (a greeting or acknowledgement). Do not treat it as a language switch. "
-                f"Continue in the current conversation language: {current_language}. Do not infer a new language from this turn."
+                "The transcript classifier predicts DEVANAGARI script. Reply in natural Hindi using Devanagari script. "
+                "Keep the response brief and conversational; do not translate unless asked."
             )
-        elif classifier_label == "uncertain":
+        elif classifier_label == "LATIN":
             language_instruction = (
-                f"The latest turn is UNCERTAIN. Preserve the current conversation language ({current_language}); "
-                "do not switch based on this turn. Ask a brief clarification only if necessary."
+                "The transcript classifier predicts LATIN script. Reply in English using Latin script. "
+                "Keep the response brief and conversational; do not translate unless asked. "
+                "This is a script prediction, not a guarantee that the spoken language is English."
             )
         else:
             language_instruction = (
-                "Use the classifier for language routing. For ENGLISH, reply in English; for HINGLISH, reply in natural conversational Hinglish. "
-                "Devanagari Hindi is routed to HINGLISH by this product policy. Do not translate unless asked. Keep replies brief and natural."
+                f"The script classifier is unavailable. Preserve the current conversation language ({current_language}) "
+                "and use the transcript/context to respond naturally."
             )
         payload = {
             "model": self.llm_model,
