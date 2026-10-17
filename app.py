@@ -26,7 +26,8 @@ def configured_secret(name: str, default: str | None = None) -> str | None:
 
 st.set_page_config(page_title="Sarvam Voice Agent", page_icon="🎤", layout="wide")
 st.title("🎤 Sarvam Voice Agent")
-st.caption("Browser Mic → Saaras STT → fine-tuned BERT-Tiny script classifier → Sarvam LLM → BakBak Raya TTS → Browser Speaker")
+st.caption("Browser Mic → Saaras STT → fine-tuned multilingual BERT-Tiny language classifier → Sarvam LLM → BakBak Raya TTS → Browser Speaker")
+st.success("✅ NEW MODEL UPDATE: Multilingual BERT-Tiny — 12 language labels (hi-IN, en-IN, pa-IN, mr-IN, and more) + none. This is the updated UI build; merge PR #2 and redeploy to activate it.")
 
 if "cloud_agent" not in st.session_state:
     st.session_state.cloud_agent = None
@@ -49,7 +50,7 @@ with st.expander("Voice model settings", expanded=True):
         disabled=st.session_state.running,
         help="Select a model ID supported by your BakBak account.",
     )
-    st.info("Script classification is fixed to your fine-tuned BERT-Tiny model (DEVANAGARI vs LATIN). Other classifier backends have been removed.")
+    st.info("Language classification uses your fine-tuned 12-label BERT-Tiny model (Indian language labels plus none).")
 
 if st.button("Start voice agent", type="primary", disabled=st.session_state.running, use_container_width=True):
     try:
@@ -186,7 +187,7 @@ if st.session_state.running and agent is not None:
         c2.metric("Saaras STT", "Listening" if agent.stt_status in ("Connected — waiting for speech", "Listening") else agent.stt_status)
         c3.metric("Sarvam LLM", "Working" if agent.llm_status == "Generating response" else agent.llm_status)
         c4.metric("BakBak Raya", "Speaking" if agent.tts_status == "Generating speech with BakBak Raya" else agent.tts_status)
-        c5.metric("BERT-Tiny classifier", agent.classifier_status)
+        c5.metric("Language classifier", agent.classifier_status)
 
         st.write(f"**Audio:** {agent.audio_frames_received:,} browser frames / {agent.audio_bytes_sent:,} bytes sent to Saaras")
         st.write(f"**Last Saaras event:** `{agent.last_stt_event or '—'}`")
@@ -202,11 +203,11 @@ if st.session_state.running and agent is not None:
             st.warning("Saaras sent a final transcript event, but no transcript text was found.")
             st.caption(f"Raw Saaras event: {agent.last_stt_raw}")
 
-        st.markdown("### 2. BERT-Tiny script classifier")
+        st.markdown("### 2. Multilingual BERT-Tiny language classifier")
         classification = agent.last_classifier_result
         if classification.get("available"):
             cc1, cc2, cc3 = st.columns(3)
-            cc1.metric("Predicted script", str(classification.get("label", "—")).upper())
+            cc1.metric("Predicted language", str(classification.get("label", "—")).upper())
             confidence = classification.get("confidence")
             cc2.metric("Top-class score", f"{confidence:.1%}" if confidence is not None else "N/A")
             cc3.metric("Inference latency", f"{classification.get('latency_ms', 0.0):.3f} ms")
@@ -278,4 +279,4 @@ st.code(
     'HF_TOKEN="hf_..."',
     language="toml",
 )
-st.caption("HF_TOKEN obtains temporary TURN credentials. BERT-Tiny model files download on first use and are cached locally. Never commit API keys.")
+st.caption("HF_TOKEN obtains temporary TURN credentials. Multilingual BERT-Tiny model files download on first use and are cached locally. Never commit API keys.")
