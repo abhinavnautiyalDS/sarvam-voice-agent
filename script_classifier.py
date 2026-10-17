@@ -10,10 +10,10 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 # Fine-tuned model maintained in the user's classifier-training repository.
-REPO = "abhinavnautiyalDS/hinglish-language-switch-llm"
-BRANCH = "script-classifier-dataset"
-MODEL_PATH = "artifacts/script_classifier_bert_tiny/model"
-MODEL_DIR = Path(os.getenv("SCRIPT_CLASSIFIER_CACHE", ".script_classifier_cache_hinglish_v2"))
+REPO = "abhinavnautiyalDS/multilingual-voice-language-classifier"
+BRANCH = "main"
+MODEL_PATH = "models/multilingual-bert-tiny-final"
+MODEL_DIR = Path(os.getenv("LANGUAGE_CLASSIFIER_CACHE", ".language_classifier_cache_v1"))
 MAX_LENGTH = 96
 
 _FILES = (
@@ -73,8 +73,8 @@ def _load():
             str(_model.config.id2label.get(i, _model.config.id2label.get(str(i), ""))).upper()
             for i in range(_model.config.num_labels)
         }
-        if labels != {"DEVANAGARI", "LATIN"}:
-            raise ValueError(f"Unexpected classifier labels in model config: {labels}")
+        if labels != {"AS-IN", "BN-IN", "EN-IN", "GU-IN", "HI-IN", "KN-IN", "ML-IN", "MR-IN", "NONE", "PA-IN", "TA-IN", "TE-IN"}:
+            raise ValueError(f"Unexpected language-classifier labels in model config: {labels}")
         _model.eval()
         _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         _model.to(_device)
@@ -82,7 +82,7 @@ def _load():
 
 
 def classify_transcript(text: str) -> dict:
-    """Classify a transcript's writing script as DEVANAGARI or LATIN."""
+    """Classify a transcript into one of the supported Indian language labels or none."""
     cleaned = " ".join(unicodedata.normalize("NFC", str(text or "")).split())
     if not cleaned:
         return {
@@ -114,11 +114,11 @@ def classify_transcript(text: str) -> dict:
         values = probs_tensor.detach().cpu().tolist()
         id2label = model.config.id2label
         scores = {
-            str(id2label.get(i, id2label.get(str(i), f"LABEL_{i}"))).upper(): float(p)
+            str(id2label.get(i, id2label.get(str(i), f"LABEL_{i}"))): float(p)
             for i, p in enumerate(values)
         }
-        if set(scores) != {"DEVANAGARI", "LATIN"}:
-            raise ValueError(f"Unexpected classifier labels: {list(scores)}")
+        if len(scores) != 12:
+            raise ValueError(f"Unexpected language-classifier labels: {list(scores)}")
 
         label = max(scores, key=scores.get)
         return {
