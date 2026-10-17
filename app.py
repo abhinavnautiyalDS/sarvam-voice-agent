@@ -27,6 +27,7 @@ def configured_secret(name: str, default: str | None = None) -> str | None:
 st.set_page_config(page_title="Sarvam Voice Agent", page_icon="🎤", layout="wide")
 st.title("🎤 Sarvam Voice Agent")
 st.caption("Browser Mic → Saaras STT → fine-tuned multilingual BERT-Tiny language classifier → Sarvam LLM → BakBak Raya TTS → Browser Speaker")
+st.success("✅ NEW MODEL UPDATE: Multilingual BERT-Tiny — 12 language labels (hi-IN, en-IN, pa-IN, mr-IN, and more) + none. This is the updated UI build; merge PR #2 and redeploy to activate it.")
 
 if "cloud_agent" not in st.session_state:
     st.session_state.cloud_agent = None
