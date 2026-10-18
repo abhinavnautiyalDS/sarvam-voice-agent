@@ -18,7 +18,7 @@ MAX_LENGTH = 128
 MODEL_VARIANTS = {
     "Old E2": {
         "kind": "directory",
-        "repo": "abhinavnautiyalDS/hindi-english-language-classifier",
+        "repo": "abhinavnautiyalDS/multilingual-voice-language-classifier",
         "branch": "main",
         "path": "models/multilingual-bert-tiny-final",
     },
