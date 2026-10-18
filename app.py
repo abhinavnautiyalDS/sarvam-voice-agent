@@ -27,7 +27,7 @@ def configured_secret(name: str, default: str | None = None) -> str | None:
 st.set_page_config(page_title="Sarvam Voice Agent", page_icon="🎤", layout="wide")
 st.title("🎤 Sarvam Voice Agent")
 st.caption("Browser Mic → Saaras STT → fine-tuned multilingual BERT-Tiny language classifier → Sarvam LLM → BakBak Raya TTS → Browser Speaker")
-st.success("✅ NEW MODEL UPDATE: Multilingual BERT-Tiny — 12 language labels (hi-IN, en-IN, pa-IN, mr-IN, and more) + none. This is the updated UI build; merge PR #2 and redeploy to activate it.")
+st.success("Multilingual BERT-Tiny supports 12 language labels. Choose the classifier model below before starting the agent.")
 
 if "cloud_agent" not in st.session_state:
     st.session_state.cloud_agent = None
@@ -50,7 +50,7 @@ with st.expander("Voice model settings", expanded=True):
         disabled=st.session_state.running,
         help="Select a model ID supported by your BakBak account.",
     )
-    st.info("Language classification uses your fine-tuned 12-label BERT-Tiny model (Indian language labels plus none).")
+    classifier_variant = st.selectbox(\n        "Language classifier model",\n        ["Old E2", "New E2", "New E4"],\n        index=0,\n        disabled=st.session_state.running,\n        help="Select the existing E2 model or either new multilingual fine-tune. The selected model is cached after its first download.",\n    )\n    st.caption(f"Selected classifier: {classifier_variant}")\n    st.info("Language classification uses the selected 12-label BERT-Tiny model (Indian language labels plus none).")
 
 if st.button("Start voice agent", type="primary", disabled=st.session_state.running, use_container_width=True):
     try:
@@ -81,7 +81,7 @@ if st.button("Start voice agent", type="primary", disabled=st.session_state.runn
             llm_model=llm_model,
             tts_model=tts_model,
             classifier_enabled=True,
-            classifier_backend="bert_tiny",
+            classifier_backend="bert_tiny",\n            classifier_model_variant=classifier_variant,
         )
 
         def audio_sink_callback(frame):
