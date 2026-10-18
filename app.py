@@ -90,8 +90,10 @@ if st.button("Start voice agent", type="primary", disabled=st.session_state.runn
             tts_model=tts_model,
             classifier_enabled=True,
             classifier_backend="bert_tiny",
-            classifier_model_variant=classifier_variant,
         )
+        # Set after construction for compatibility with a deployment still serving
+        # an older cached CloudVoiceAgent class; current cloud_voice.py reads this.
+        agent.classifier_model_variant = classifier_variant
 
         def audio_sink_callback(frame):
             agent.ingest_webrtc_frame(frame)
