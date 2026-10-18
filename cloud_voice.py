@@ -28,6 +28,7 @@ class CloudVoiceAgent:
         tts_model: str = "m1",
         classifier_enabled: bool = True,
         classifier_backend: str = "ml",
+        classifier_model_variant: str = "Old E2",
     ):
         self.sarvam_api_key = sarvam_api_key
         self.bakbak_api_key = bakbak_api_key
@@ -37,6 +38,7 @@ class CloudVoiceAgent:
         self.tts_model = tts_model
         self.classifier_enabled = classifier_enabled
         self.classifier_backend = "bert_tiny"
+        self.classifier_model_variant = classifier_model_variant
         self.current_response_language = "hindi"
 
         self.audio_in = queue.Queue(maxsize=100)
@@ -198,12 +200,12 @@ class CloudVoiceAgent:
                 self.error_stage = ""
 
                 if self.classifier_enabled:
-                    self.last_classifier_result = await asyncio.to_thread(classify_language_transcript, transcript)
+                    self.last_classifier_result = await asyncio.to_thread(classify_language_transcript, transcript, self.classifier_model_variant)
                     result = self.last_classifier_result
                     confidence = result.get("confidence")
                     if result.get("available"):
                         confidence_text = f" ({confidence:.0%})" if confidence is not None else " (score N/A)"
-                        self.classifier_status = f"Language BERT-Tiny: {result.get('label', 'unknown')}{confidence_text}"
+                        self.classifier_status = f"{self.classifier_model_variant}: {result.get('label', 'unknown')}{confidence_text}"
                     else:
                         self.classifier_status = f"Language classifier unavailable ({result.get('reason', 'unknown')})"
                 else:
