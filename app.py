@@ -50,7 +50,15 @@ with st.expander("Voice model settings", expanded=True):
         disabled=st.session_state.running,
         help="Select a model ID supported by your BakBak account.",
     )
-    classifier_variant = st.selectbox(\n        "Language classifier model",\n        ["Old E2", "New E2", "New E4"],\n        index=0,\n        disabled=st.session_state.running,\n        help="Select the existing E2 model or either new multilingual fine-tune. The selected model is cached after its first download.",\n    )\n    st.caption(f"Selected classifier: {classifier_variant}")\n    st.info("Language classification uses the selected 12-label BERT-Tiny model (Indian language labels plus none).")
+    classifier_variant = st.selectbox(
+        "Language classifier model",
+        ["Old E2", "New E2", "New E4"],
+        index=0,
+        disabled=st.session_state.running,
+        help="Select the existing E2 model or either new multilingual fine-tune. The selected model is cached after its first download.",
+    )
+    st.caption(f"Selected classifier: {classifier_variant}")
+    st.info("Language classification uses the selected 12-label BERT-Tiny model (Indian language labels plus none).")
 
 if st.button("Start voice agent", type="primary", disabled=st.session_state.running, use_container_width=True):
     try:
@@ -81,7 +89,8 @@ if st.button("Start voice agent", type="primary", disabled=st.session_state.runn
             llm_model=llm_model,
             tts_model=tts_model,
             classifier_enabled=True,
-            classifier_backend="bert_tiny",\n            classifier_model_variant=classifier_variant,
+            classifier_backend="bert_tiny",
+            classifier_model_variant=classifier_variant,
         )
 
         def audio_sink_callback(frame):
