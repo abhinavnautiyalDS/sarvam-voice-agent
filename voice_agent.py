@@ -3,6 +3,7 @@ import asyncio
 import httpx
 
 from dotenv import load_dotenv
+from system_prompt import get_system_prompt
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -96,11 +97,7 @@ async def run_voice_agent():
         base_url=os.getenv("SARVAM_LLM_BASE_URL", "https://api.sarvam.ai/v1"),
         settings=SarvamLLMService.Settings(
             model=os.getenv("SARVAM_LLM_MODEL", "sarvam-105b"),
-            system_instruction=os.getenv(
-                "VOICE_SYSTEM_PROMPT",
-                "You are a helpful voice assistant. The user primarily speaks Hindi and may mix "
-                "English. Reply naturally and briefly. Do not use markdown, bullets, or emojis.",
-            ),
+            system_instruction=get_system_prompt(),
             max_tokens=int(os.getenv("SARVAM_LLM_MAX_TOKENS", "150")),
         ),
     )
