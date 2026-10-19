@@ -53,6 +53,10 @@ LANGUAGE_CLASSIFIER_OVERRIDE_CONFIDENCE = "0.80"
 
 Never commit API keys or `.env` files.
 
+## Voice system prompt
+
+The browser WebRTC app and the local Pipecat runner both load their system prompt from `system_prompt.txt`. This checked-in file takes precedence over the legacy `VOICE_SYSTEM_PROMPT` environment variable; the environment variable is only a fallback if the file is missing or empty.
+
 ## Configurable models
 
 - STT defaults to `saaras:v3-realtime`; model ID and endpointing parameters can be configured with the `SARVAM_STT_*` environment variables.
