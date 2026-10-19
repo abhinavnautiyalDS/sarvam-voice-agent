@@ -56,8 +56,6 @@ class CloudVoiceAgent:
         self.last_stt_event = ""
         self.last_stt_raw = ""
         self.last_detected_language = ""
-        self.previous_user_text = ""
-        self.last_classifier_input = ""
         self.last_language_source = "Saaras"
         self.last_classifier_result = {
             "label": "unavailable", "confidence": 0.0, "probabilities": {},
