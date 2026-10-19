@@ -40,6 +40,9 @@ class CloudVoiceAgent:
         self.classifier_backend = "bert_tiny"
         self.classifier_model_variant = classifier_model_variant
         self.current_response_language = "hindi"
+        # Previous finalized caller turn helps disambiguate short/code-mixed turns.
+        self.previous_user_text = ""
+        self.last_classifier_input = ""
 
         self.audio_in = queue.Queue(maxsize=100)
         self.running = False
@@ -53,6 +56,8 @@ class CloudVoiceAgent:
         self.last_stt_event = ""
         self.last_stt_raw = ""
         self.last_detected_language = ""
+        self.previous_user_text = ""
+        self.last_classifier_input = ""
         self.last_language_source = "Saaras"
         self.last_classifier_result = {
             "label": "unavailable", "confidence": 0.0, "probabilities": {},
@@ -86,6 +91,8 @@ class CloudVoiceAgent:
         self.last_stt_event = ""
         self.last_stt_raw = ""
         self.last_detected_language = ""
+        self.previous_user_text = ""
+        self.last_classifier_input = ""
         self.last_language_source = "Saaras"
         self.last_user_text = ""
         self.live_transcript = ""
@@ -193,6 +200,12 @@ class CloudVoiceAgent:
                     self.stt_status = "Final transcript event received — text missing"
                     continue
 
+                # Classify previous + current finalized caller turns together.
+                # This gives the model context when the current turn is only a term
+                # such as "BTECH", rather than evidence of an actual language switch.
+                previous_turn = self.previous_user_text.strip()
+                classifier_input = f"{previous_turn}\n{transcript}" if previous_turn else transcript
+                self.last_classifier_input = classifier_input
                 self.last_user_text = transcript
                 self.live_transcript = transcript
                 self.stt_status = "Transcript received"
@@ -200,7 +213,11 @@ class CloudVoiceAgent:
                 self.error_stage = ""
 
                 if self.classifier_enabled:
-                    self.last_classifier_result = await asyncio.to_thread(classify_language_transcript, transcript, self.classifier_model_variant)
+                    self.last_classifier_result = await asyncio.to_thread(
+                        classify_language_transcript,
+                        classifier_input,
+                        self.classifier_model_variant,
+                    )
                     result = self.last_classifier_result
                     confidence = result.get("confidence")
                     if result.get("available"):
@@ -241,6 +258,10 @@ class CloudVoiceAgent:
                 }
                 if result.get("available") and classifier_label in response_language_by_label:
                     self.current_response_language = response_language_by_label[classifier_label]
+
+                # Advance history after classification so each inference sees exactly
+                # the previous finalized caller turn plus the current one.
+                self.previous_user_text = transcript
 
                 self.llm_status = "Generating response"
                 try:
