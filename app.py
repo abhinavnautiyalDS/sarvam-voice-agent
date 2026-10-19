@@ -212,7 +212,8 @@ if st.session_state.running and agent is not None:
         st.markdown("### 2. Context-aware multilingual BERT-Tiny classifier")
         classification = agent.last_classifier_result
         st.caption("Classifier input (previous finalized caller turn + current turn):")
-        st.code(agent.last_classifier_input or agent.last_user_text or "Waiting for transcript...", language="text")
+        classifier_input = getattr(agent, "last_classifier_input", "") or agent.last_user_text or "Waiting for transcript..."
+        st.code(classifier_input, language="text")
         if classification.get("available"):
             cc1, cc2, cc3 = st.columns(3)
             cc1.metric("Predicted language", str(classification.get("label", "—")).upper())
