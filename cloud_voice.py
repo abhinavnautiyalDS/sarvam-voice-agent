@@ -14,6 +14,7 @@ import numpy as np
 import websockets
 
 from script_classifier import classify_transcript as classify_language_transcript
+from system_prompt import get_system_prompt
 
 
 class CloudVoiceAgent:
@@ -375,10 +376,7 @@ class CloudVoiceAgent:
             "api-subscription-key": self.sarvam_api_key,
             "Content-Type": "application/json",
         }
-        system_prompt = os.getenv(
-            "VOICE_SYSTEM_PROMPT",
-            "You are a concise, natural voice assistant. Answer directly. Avoid markdown, bullets, and emojis.",
-        )
+        system_prompt = get_system_prompt()
         classifier_result = classifier_result or {}
         classifier_label = str(classifier_result.get("label", "none")) if classifier_result.get("available") else "none"
         classifier_confidence_value = classifier_result.get("confidence")
