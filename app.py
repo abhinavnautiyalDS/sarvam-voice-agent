@@ -52,10 +52,10 @@ with st.expander("Voice model settings", expanded=True):
     )
     classifier_variant = st.selectbox(
         "Language classifier model",
-        ["Old E2", "New E2", "New E4"],
+        ["Old E2", "New E2", "New E4", "Version 4 (New E2)"],
         index=0,
         disabled=st.session_state.running,
-        help="Select the existing E2 model or either new multilingual fine-tune. The selected model is cached after its first download.",
+        help="Select one of the four multilingual BERT-Tiny checkpoints. The selected model is cached after its first download.",
     )
     st.caption(f"Selected classifier: {classifier_variant}")
     st.info("Language classification uses the selected 12-label BERT-Tiny model (Indian language labels plus none).")
@@ -90,10 +90,8 @@ if st.button("Start voice agent", type="primary", disabled=st.session_state.runn
             tts_model=tts_model,
             classifier_enabled=True,
             classifier_backend="bert_tiny",
+            classifier_model_variant=classifier_variant,
         )
-        # Set after construction for compatibility with a deployment still serving
-        # an older cached CloudVoiceAgent class; current cloud_voice.py reads this.
-        agent.classifier_model_variant = classifier_variant
 
         def audio_sink_callback(frame):
             agent.ingest_webrtc_frame(frame)
