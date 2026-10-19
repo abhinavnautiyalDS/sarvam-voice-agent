@@ -32,6 +32,11 @@ MODEL_VARIANTS = {
         "branch": "main",
         "path": "artifacts/models/bert_tiny_e4_multilingual.zip",
     },
+    "Version 4 (New E2)": {
+        "kind": "zip",
+        "branch": "version4",
+        "path": "models/bert_tiny_e2_multilingual_version4.zip",
+    },
 }
 DEFAULT_VARIANT = os.getenv("LANGUAGE_CLASSIFIER_VARIANT", "Old E2")
 _REQUIRED_FILES = ("config.json", "model.safetensors", "tokenizer.json")
@@ -126,7 +131,7 @@ def _load(variant: str):
 
 
 def classify_transcript(text: str, model_variant: str | None = None) -> dict:
-    """Classify transcript with selected Old E2, New E2, or New E4 model."""
+    """Classify transcript with the selected multilingual BERT-Tiny model variant."""
     cleaned = " ".join(unicodedata.normalize("NFC", str(text or "")).split())
     if not cleaned:
         return {
