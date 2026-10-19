@@ -3,6 +3,7 @@ import base64
 import json
 import os
 import queue
+import re
 import threading
 import time
 import urllib.parse
@@ -254,6 +255,34 @@ class CloudVoiceAgent:
                     "ml-IN": "malayalam", "mr-IN": "marathi", "ta-IN": "tamil",
                     "te-IN": "telugu", "as-IN": "assamese",
                 }
+                # A standalone uppercase acronym is not reliable evidence of a language
+                # switch. Keep the established conversation language for terms like BTECH.
+                is_standalone_acronym = bool(
+                    previous_turn
+                    and re.fullmatch(r"[A-Z][A-Z0-9.+#-]{1,15}", transcript.strip())
+                )
+                previous_language_label = next(
+                    (label for label, language in response_language_by_label.items()
+                     if language == self.current_response_language),
+                    None,
+                )
+                if (
+                    result.get("available")
+                    and is_standalone_acronym
+                    and previous_language_label
+                    and classifier_label != previous_language_label
+                ):
+                    result = dict(result)
+                    result["raw_prediction_label"] = classifier_label
+                    result["label"] = previous_language_label
+                    result["context_override"] = "standalone_acronym_kept_previous_language"
+                    classifier_label = previous_language_label
+                    self.last_classifier_result = result
+                    self.classifier_status = (
+                        f"{self.classifier_model_variant}: {classifier_label} "
+                        f"(retained for standalone acronym; raw prediction: "
+                        f"{result['raw_prediction_label']})"
+                    )
                 if result.get("available") and classifier_label in response_language_by_label:
                     self.current_response_language = response_language_by_label[classifier_label]
 
