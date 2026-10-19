@@ -112,8 +112,6 @@ agent = st.session_state.cloud_agent
 if st.session_state.running and agent is not None:
     pcm_output = st.session_state.pcm_output
     audio_sink = st.session_state.audio_sink
-    # TURN is needed on some hosted/network combinations. Prefer Cloudflare,
-    # then Hugging Face, then optional manually configured TURN; always retain STUN.
     ice_servers = [{"urls": "stun:stun.l.google.com:19302"}]
     turn_provider = "STUN fallback"
     cloudflare_key_id = configured_secret("CLOUDFLARE_TURN_KEY_ID", "") or ""
@@ -146,7 +144,6 @@ if st.session_state.running and agent is not None:
                     turn_provider = "Hugging Face TURN + STUN"
             except Exception as exc:
                 st.warning(f"HF TURN unavailable ({type(exc).__name__}: {exc}). STUN-only fallback is active.")
-    # Optional generic TURN server. Store credentials in Streamlit Secrets / env, never in code.
     custom_turn_url = configured_secret("TURN_SERVER_URL", "") or ""
     custom_turn_username = configured_secret("TURN_SERVER_USERNAME", "") or ""
     custom_turn_credential = configured_secret("TURN_SERVER_CREDENTIAL", "") or ""
