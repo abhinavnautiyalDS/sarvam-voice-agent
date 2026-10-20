@@ -27,10 +27,11 @@ MODEL_VARIANTS = {
         "branch": "main",
         "path": "artifacts/models/bert_tiny_e2_multilingual.zip",
     },
-    "New E4": {
+    "Version 4.1": {
         "kind": "zip",
-        "branch": "main",
-        "path": "artifacts/models/bert_tiny_e4_multilingual.zip",
+        "repo": "abhinavnautiyalDS/Real-Time-Language-Switching-for-Voice-Agents",
+        "branch": "version4.1",
+        "path": "models/bert_tiny_e2_multilingual_version4_1.zip",
     },
     "Version 4 (New E2)": {
         "kind": "zip",
@@ -82,9 +83,10 @@ def _ensure_model_files(variant: str) -> Path:
     else:
         archive = model_cache / Path(spec["path"]).name
         if not archive.exists() or archive.stat().st_size < 1024:
+            source_repo = spec.get("repo", CLASSIFIER_REPO)
             url = (
                 f"https://media.githubusercontent.com/media/"
-                f"{CLASSIFIER_REPO}/{spec['branch']}/{spec['path']}"
+                f"{source_repo}/{spec['branch']}/{spec['path']}"
             )
             _download(url, archive)
         extract_dir = model_cache / "extracted"
