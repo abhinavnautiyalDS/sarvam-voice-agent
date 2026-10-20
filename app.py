@@ -52,10 +52,10 @@ with st.expander("Voice model settings", expanded=True):
     )
     classifier_variant = st.selectbox(
         "Language classifier model",
-        ["Old E2", "New E2", "New E4", "Version 4 (New E2)"],
+        ["Old E2", "New E2", "Version 4 (New E2)", "Version 4.1"],
         index=0,
         disabled=st.session_state.running,
-        help="Select one of the four multilingual BERT-Tiny checkpoints. The selected model is cached after its first download.",
+        help="Select one of the four multilingual BERT-Tiny checkpoints. Version 4.1 uses the new model from the Real-Time-Language-Switching-for-Voice-Agents repository. The selected model is cached after its first download.",
     )
     st.caption(f"Selected classifier: {classifier_variant}")
     st.info("Language classification uses the selected 12-label BERT-Tiny model (Indian language labels plus none).")
