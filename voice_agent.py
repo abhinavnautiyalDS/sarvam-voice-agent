@@ -88,7 +88,7 @@ async def run_voice_agent():
         endpointing=os.getenv("SARVAM_STT_ENDPOINTING", "vad"),
         stream_type=os.getenv("SARVAM_STT_STREAM_TYPE", "fast"),
         mode=os.getenv("SARVAM_STT_MODE", "codemix"),
-        threshold=float(os.getenv("SARVAM_STT_THRESHOLD", "0.1")),
+        threshold=float(os.getenv("SARVAM_STT_THRESHOLD", "0.3")),
         silence_duration_ms=int(os.getenv("SARVAM_SILENCE_DURATION_MS", "700")),
         min_speech_duration_ms=int(os.getenv("SARVAM_MIN_SPEECH_DURATION_MS", "200")),
     )
