@@ -27,6 +27,7 @@ class CloudVoiceAgent:
         bakbak_voice_id: str,
         output_source=None,
         llm_model: str = "sarvam-105b-conversations",
+        gemma_api_key: str | None = None,
         tts_model: str = "m1",
         classifier_enabled: bool = True,
         classifier_backend: str = "ml",
@@ -37,6 +38,7 @@ class CloudVoiceAgent:
         self.bakbak_voice_id = bakbak_voice_id
         self.output_source = output_source
         self.llm_model = llm_model
+        self.gemma_api_key = gemma_api_key
         self.tts_model = tts_model
         self.classifier_enabled = classifier_enabled
         self.classifier_backend = "bert_tiny"
@@ -410,20 +412,60 @@ class CloudVoiceAgent:
                 f"The language classifier is unavailable. Preserve the current conversation language ({current_language}) "
                 "and use Saaras metadata and transcript context to respond naturally."
             )
+        prompt_context = (
+            f"{system_prompt}\\n{language_instruction}\\n"
+            f"Latest Saaras language metadata: {detected_language}.\\n"
+            f"{language_hint}"
+        )
+        max_tokens = int(os.getenv("SARVAM_LLM_MAX_TOKENS", "120"))
+
+        if self.llm_model == "gemma-3-27b-it":
+            if not self.gemma_api_key:
+                raise ValueError(
+                    "Gemma selected but GEMINI_API_KEY (or GEMMA_API_KEY) is missing from Streamlit secrets."
+                )
+            # Use Google's native generateContent endpoint for Gemma.
+            gemma_url = (
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{self.llm_model}:generateContent"
+            )
+            gemma_payload = {
+                "contents": [{
+                    "role": "user",
+                    "parts": [{
+                        "text": (
+                            f"{prompt_context}\\n\\n"
+                            f"Caller said: {user_text}\\n"
+                            "Reply directly to the caller, briefly and conversationally."
+                        )
+                    }],
+                }],
+                "generationConfig": {"maxOutputTokens": max_tokens},
+            }
+            async with httpx.AsyncClient(timeout=45) as client:
+                response = await client.post(
+                    gemma_url,
+                    params={"key": self.gemma_api_key},
+                    headers={"Content-Type": "application/json"},
+                    json=gemma_payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+            self.llm_latency_ms = round((time.perf_counter() - started) * 1000, 1)
+            parts = (
+                data.get("candidates", [{}])[0]
+                .get("content", {})
+                .get("parts", [])
+            )
+            return "".join(part.get("text", "") for part in parts if isinstance(part, dict)).strip()
+
         payload = {
             "model": self.llm_model,
             "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        f"{system_prompt}\\n{language_instruction}\\n"
-                        f"Latest Saaras language metadata: {detected_language}.\\n"
-                        f"{language_hint}"
-                    ),
-                },
+                {"role": "system", "content": prompt_context},
                 {"role": "user", "content": user_text},
             ],
-            "max_tokens": int(os.getenv("SARVAM_LLM_MAX_TOKENS", "120")),
+            "max_tokens": max_tokens,
         }
         async with httpx.AsyncClient(timeout=45) as client:
             response = await client.post(url, headers=headers, json=payload)
