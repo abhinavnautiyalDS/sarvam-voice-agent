@@ -419,7 +419,7 @@ class CloudVoiceAgent:
         )
         max_tokens = int(os.getenv("SARVAM_LLM_MAX_TOKENS", "120"))
 
-        if self.llm_model == "gemma-3-27b-it":
+        if self.llm_model == "gemma-4-26b-a4b-it":
             if not self.gemma_api_key:
                 raise ValueError(
                     "Gemma selected but GEMINI_API_KEY (or GEMMA_API_KEY) is missing from Streamlit secrets."
@@ -445,8 +445,10 @@ class CloudVoiceAgent:
             async with httpx.AsyncClient(timeout=45) as client:
                 response = await client.post(
                     gemma_url,
-                    params={"key": self.gemma_api_key},
-                    headers={"Content-Type": "application/json"},
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": self.gemma_api_key,
+                    },
                     json=gemma_payload,
                 )
                 response.raise_for_status()
