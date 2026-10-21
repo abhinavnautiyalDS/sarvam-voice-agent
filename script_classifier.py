@@ -31,7 +31,7 @@ MODEL_VARIANTS = {
         "kind": "zip",
         "repo": "abhinavnautiyalDS/Real-Time-Language-Switching-for-Voice-Agents",
         "branch": "version4.1",
-        "path": "models/bert_tiny_e2_multilingual_version4_1.zip",
+        "path": "models/bert_tiny_e2_multilingual_version4.1.zip",
     },
     "Version 4 (New E2)": {
         "kind": "zip",
