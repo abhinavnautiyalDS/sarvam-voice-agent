@@ -41,12 +41,12 @@ st.subheader("Model settings")
 with st.expander("Voice model settings", expanded=True):
     llm_model = st.selectbox(
         "Sarvam LLM model",
-        ["sarvam-105b-conversations", "sarvam-105b", "Gemma 3 27B (Google)"],
+        ["sarvam-105b-conversations", "sarvam-105b", "Gemma 4 26B (Google)"],
         index=0,
         disabled=st.session_state.running,
     )
-    if llm_model == "Gemma 3 27B (Google)":
-        llm_model = "gemma-3-27b-it"
+    if llm_model == "Gemma 4 26B (Google)":
+        llm_model = "gemma-4-26b-a4b-it"
 
     tts_model = st.selectbox(
         "BakBak Raya TTS model", ["m1"], index=0,
@@ -76,7 +76,7 @@ if st.button("Start voice agent", type="primary", disabled=st.session_state.runn
         voice_id = configured_secret("BAKBAK_VOICE_ID")
         missing = [name for name, value in (
             ("SARVAM_API_KEY", sarvam_key),
-            ("GEMINI_API_KEY (or GEMMA_API_KEY)", gemma_key) if llm_model == "gemma-3-27b-it" else ("SARVAM_API_KEY", sarvam_key),
+            ("GEMINI_API_KEY (or GEMMA_API_KEY)", gemma_key) if llm_model == "gemma-4-26b-a4b-it" else ("SARVAM_API_KEY", sarvam_key),
             ("BAKBAK_API_KEY", bakbak_key),
             ("BAKBAK_VOICE_ID", voice_id),
         ) if not value]
