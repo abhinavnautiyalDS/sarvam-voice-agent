@@ -41,10 +41,13 @@ st.subheader("Model settings")
 with st.expander("Voice model settings", expanded=True):
     llm_model = st.selectbox(
         "Sarvam LLM model",
-        ["sarvam-105b-conversations", "sarvam-105b"],
+        ["sarvam-105b-conversations", "sarvam-105b", "Gemma 3 27B (Google)"],
         index=0,
         disabled=st.session_state.running,
     )
+    if llm_model == "Gemma 3 27B (Google)":
+        llm_model = "gemma-3-27b-it"
+
     tts_model = st.selectbox(
         "BakBak Raya TTS model", ["m1"], index=0,
         disabled=st.session_state.running,
@@ -68,10 +71,12 @@ if st.button("Start voice agent", type="primary", disabled=st.session_state.runn
             key=f"sarvam_voice_output_{generation}", sample_rate=24000, ptime=0.020,
         )
         sarvam_key = configured_secret("SARVAM_API_KEY")
+        gemma_key = configured_secret("GEMMA_API_KEY") or configured_secret("GEMINI_API_KEY")
         bakbak_key = configured_secret("BAKBAK_API_KEY")
         voice_id = configured_secret("BAKBAK_VOICE_ID")
         missing = [name for name, value in (
             ("SARVAM_API_KEY", sarvam_key),
+            ("GEMINI_API_KEY (or GEMMA_API_KEY)", gemma_key) if llm_model == "gemma-3-27b-it" else ("SARVAM_API_KEY", sarvam_key),
             ("BAKBAK_API_KEY", bakbak_key),
             ("BAKBAK_VOICE_ID", voice_id),
         ) if not value]
@@ -87,6 +92,7 @@ if st.button("Start voice agent", type="primary", disabled=st.session_state.runn
             voice_id,
             output_source=pcm_output,
             llm_model=llm_model,
+            gemma_api_key=gemma_key,
             tts_model=tts_model,
             classifier_enabled=True,
             classifier_backend="bert_tiny",
@@ -283,6 +289,7 @@ st.divider()
 st.subheader("Streamlit secrets")
 st.code(
     'SARVAM_API_KEY="..."\n'
+    'GEMINI_API_KEY="..."  # needed only when Gemma is selected\n'
     'BAKBAK_API_KEY="..."\n'
     'BAKBAK_VOICE_ID="..."\n'
     'HF_TOKEN="hf_..."',
