@@ -136,7 +136,7 @@ class CloudVoiceAgent:
     async def _run(self):
         params = urllib.parse.urlencode({
             "language_code": "auto",
-            "model": os.getenv("SARVAM_STT_MODEL", "saaras:v3-realtime"),
+            "model": os.getenv("SARVAM_STT_MODEL", "saaras:v4"),
             "stream_type": os.getenv("SARVAM_STT_STREAM_TYPE", "fast"),
             "mode": os.getenv("SARVAM_STT_MODE", "codemix"),
             "endpointing": "vad",
