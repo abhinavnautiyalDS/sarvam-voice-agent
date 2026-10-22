@@ -209,8 +209,17 @@ class CloudVoiceAgent:
             elif event_type == "transcript.partial":
                 partial = self._extract_transcript(event)
                 if partial:
-                    self.live_transcript = partial
-                    self.stt_status = "Listening"
+                    # Keep a pending short finalized turn visible while Sarvam streams
+                    # the next utterance, so the live transcript reflects the context
+                    # that the turn buffer is building.
+                    self.live_transcript = (
+                        f"{self.turn_buffer_text} {partial}".strip()
+                        if self.turn_buffer_text else partial
+                    )
+                    self.stt_status = (
+                        "Listening — building context with buffered turn"
+                        if self.turn_buffer_text else "Listening"
+                    )
             elif event_type == "transcript.final":
                 transcript = self._extract_transcript(event)
                 if not transcript:
@@ -226,12 +235,14 @@ class CloudVoiceAgent:
                     self.turn_buffer_text = ""
                     self.turn_buffer_event = {}
                     combined = f"{previous} {transcript}".strip()
+                    self.live_transcript = combined
                     self.last_turn_buffer_decision = "SECOND TURN → COMBINE_AND_CLASSIFY"
                     self.last_combined_turn_text = combined
                     await self._process_final_transcript(combined, event)
                 elif self.turn_buffer_enabled and self._should_buffer_short_turn(transcript):
                     self.turn_buffer_text = transcript
                     self.turn_buffer_event = event
+                    self.live_transcript = transcript
                     self.last_turn_buffer_decision = "SHORT TURN → BUFFER_AND_WAIT"
                     self.classifier_status = f"Waiting for context ({self.turn_buffer_timeout_ms} ms)"
                     self.turn_buffer_task = asyncio.create_task(
@@ -398,6 +409,7 @@ class CloudVoiceAgent:
             self.turn_buffer_task = None
             self.last_turn_buffer_decision = "TIMEOUT → FLUSH_AND_CLASSIFY"
             self.last_combined_turn_text = buffered
+            self.live_transcript = buffered
             await self._process_final_transcript(buffered, buffered_event)
         except asyncio.CancelledError:
             return
