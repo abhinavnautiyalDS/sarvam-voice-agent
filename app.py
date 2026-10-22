@@ -63,6 +63,20 @@ with st.expander("Voice model settings", expanded=True):
     st.caption(f"Selected classifier: {classifier_variant}")
     st.info("Language classification uses the selected 12-label BERT-Tiny model (Indian language labels plus none).")
 
+    turn_buffer_enabled = st.checkbox(
+        "Enable short-turn buffering",
+        value=True,
+        disabled=st.session_state.running,
+        help="Briefly combine uncertain short finalized ASR turns with the next turn. Meaningful acknowledgements bypass buffering.",
+    )
+    turn_buffer_timeout_ms = st.slider(
+        "Buffer timeout (ms)",
+        min_value=200, max_value=1000, value=500, step=50,
+        disabled=st.session_state.running or not turn_buffer_enabled,
+        help="If no compatible next turn arrives, the buffered text is flushed and processed alone.",
+    )
+    st.caption("Experimental heuristic: short turns (usually 1–2 words) are buffered unless they match a known acknowledgement. No additional training is used.")
+
 if st.button("Start voice agent", type="primary", disabled=st.session_state.running, use_container_width=True):
     try:
         st.session_state.webrtc_generation = st.session_state.get("webrtc_generation", 0) + 1
@@ -97,6 +111,8 @@ if st.button("Start voice agent", type="primary", disabled=st.session_state.runn
             classifier_enabled=True,
             classifier_backend="bert_tiny",
             classifier_model_variant=classifier_variant,
+            turn_buffer_enabled=turn_buffer_enabled,
+            turn_buffer_timeout_ms=turn_buffer_timeout_ms,
         )
 
         def audio_sink_callback(frame):
@@ -203,6 +219,17 @@ if st.session_state.running and agent is not None:
 
         st.write(f"**Audio:** {agent.audio_frames_received:,} browser frames / {agent.audio_bytes_sent:,} bytes sent to Saaras")
         st.write(f"**Last Saaras event:** `{agent.last_stt_event or '—'}`")
+        st.markdown("### Turn buffering")
+        bc1, bc2, bc3 = st.columns(3)
+        bc1.metric("Buffering", "Enabled" if agent.turn_buffer_enabled else "Disabled")
+        bc2.metric("Buffered turn", "Waiting" if agent.turn_buffer_text else "Empty")
+        bc3.metric("Timeout", f"{agent.turn_buffer_timeout_ms} ms")
+        if agent.turn_buffer_text:
+            st.warning(f"Pending text: {agent.turn_buffer_text}")
+        elif agent.last_turn_buffer_decision:
+            st.caption(f"Last turn decision: {agent.last_turn_buffer_decision}")
+        if agent.last_combined_turn_text:
+            st.caption(f"Last combined classifier input: {agent.last_combined_turn_text}")
 
         st.markdown("### 1. STT transcript")
         if agent.live_transcript:
