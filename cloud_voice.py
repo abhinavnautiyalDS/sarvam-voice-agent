@@ -46,6 +46,9 @@ class CloudVoiceAgent:
         self.classifier_model_variant = classifier_model_variant
         self.turn_buffer_enabled = bool(turn_buffer_enabled)
         self.turn_buffer_timeout_ms = max(200, min(int(turn_buffer_timeout_ms), 1000))
+        self.turn_reliability_threshold = float(os.getenv("TURN_RELIABILITY_THRESHOLD", "0.65"))
+        self.last_turn_reliability = None
+        self.last_turn_reliability_details = {}
         self.turn_buffer_text = ""
         self.turn_buffer_event = {}
         self.turn_buffer_task = None
@@ -226,7 +229,7 @@ class CloudVoiceAgent:
                     self.stt_status = "Final transcript event received — text missing"
                     continue
 
-                # Decide whether to process this finalized ASR chunk now or briefly buffer it.
+                # Run the existing reliability formula on each finalized transcript.
                 if self.turn_buffer_text:
                     previous = self.turn_buffer_text
                     if self.turn_buffer_task and not self.turn_buffer_task.done():
@@ -239,19 +242,26 @@ class CloudVoiceAgent:
                     self.last_turn_buffer_decision = "SECOND TURN → COMBINE_AND_CLASSIFY"
                     self.last_combined_turn_text = combined
                     await self._process_final_transcript(combined, event)
-                elif self.turn_buffer_enabled and self._should_buffer_short_turn(transcript):
-                    self.turn_buffer_text = transcript
-                    self.turn_buffer_event = event
-                    self.live_transcript = transcript
-                    self.last_turn_buffer_decision = "SHORT TURN → BUFFER_AND_WAIT"
-                    self.classifier_status = f"Waiting for context ({self.turn_buffer_timeout_ms} ms)"
-                    self.turn_buffer_task = asyncio.create_task(
-                        self._flush_turn_buffer_after_timeout(event)
-                    )
-                else:
-                    self.last_turn_buffer_decision = "SUFFICIENT / MEANINGFUL TURN → CLASSIFY_NOW"
+                elif not self.turn_buffer_enabled:
+                    self.last_turn_buffer_decision = "BUFFERING DISABLED → CLASSIFY_NOW"
                     self.last_combined_turn_text = transcript
                     await self._process_final_transcript(transcript, event)
+                else:
+                    probe = await asyncio.to_thread(classify_language_transcript, transcript, self.classifier_model_variant) if self.classifier_enabled else {"available": False, "confidence": 0.0}
+                    reliability, details = self._turn_reliability(transcript, probe)
+                    self.last_turn_reliability = reliability
+                    self.last_turn_reliability_details = details
+                    should_wait = reliability < self.turn_reliability_threshold and not self._is_meaningful_short_turn(transcript)
+                    self.last_turn_buffer_decision = f"RELIABILITY {reliability:.3f} → {'WAIT_FOR_NEXT_TURN' if should_wait else 'CLASSIFY_NOW'}"
+                    if should_wait:
+                        self.turn_buffer_text = transcript
+                        self.turn_buffer_event = event
+                        self.live_transcript = transcript
+                        self.classifier_status = f"Waiting for context ({self.turn_buffer_timeout_ms} ms); reliability={reliability:.3f}"
+                        self.turn_buffer_task = asyncio.create_task(self._flush_turn_buffer_after_timeout(event))
+                    else:
+                        self.last_combined_turn_text = transcript
+                        await self._process_final_transcript(transcript, event, classifier_result=probe)
 
             elif event_type == "error":
                 code = event.get("code", "unknown")
@@ -259,7 +269,28 @@ class CloudVoiceAgent:
                 self.error_stage = "STT"
                 raise RuntimeError(f"Sarvam STT error {code}: {message}")
 
-    async def _process_final_transcript(self, transcript: str, event: dict):
+
+    @staticmethod
+    def _turn_reliability(text: str, classifier_result: dict) -> tuple[float, dict]:
+        import unicodedata
+        words = text.split()
+        n = len(words)
+        length_score = min(n / 5.0, 1.0)
+        fillers = {"um", "umm", "uh", "uhh", "hmm", "hmmm", "erm"}
+        meaningful_ratio = sum(w.lower().strip(".,!?;:") not in fillers for w in words) / max(n, 1)
+        normalized = text.lower().strip(" .,!?:;")
+        known = {"hello", "hi", "hey", "yes", "yeah", "okay", "ok", "haan", "haan bilkul", "हाँ", "हां", "हाँ बिल्कुल", "बिल्कुल", "जी", "thank you", "thanks", "no", "nope", "right"}
+        phrase_match = 1.0 if normalized in known else 0.0
+        meaning_score = min(max(0.5 * meaningful_ratio + 0.5 * phrase_match, 0.0), 1.0)
+        letters = [ch for ch in text if ch.isalpha()]
+        scripts = ("LATIN", "DEVANAGARI", "GURMUKHI", "BENGALI", "GUJARATI", "TAMIL", "TELUGU", "KANNADA", "MALAYALAM", "ORIYA", "ODIA")
+        recognized = [ch for ch in letters if any(s in unicodedata.name(ch, "") for s in scripts)]
+        script_score = len(recognized) / max(len(letters), 1)
+        confidence = float(classifier_result.get("confidence") or 0.0)
+        score = (0.25 * length_score + 0.20 * meaning_score + 0.20 * confidence + 0.20 * script_score) / 0.85
+        return score, {"length": length_score, "meaning": meaning_score, "confidence": confidence, "script": script_score}
+
+    async def _process_final_transcript(self, transcript: str, event: dict, classifier_result: dict | None = None):
         # Classify only the current finalized caller turn (single-turn inference).
         classifier_input = transcript
         self.last_classifier_input = classifier_input
@@ -270,7 +301,7 @@ class CloudVoiceAgent:
         self.error_stage = ""
 
         if self.classifier_enabled:
-            self.last_classifier_result = await asyncio.to_thread(
+            self.last_classifier_result = classifier_result or await asyncio.to_thread(
                 classify_language_transcript,
                 classifier_input,
                 self.classifier_model_variant,
