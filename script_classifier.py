@@ -19,7 +19,7 @@ MODEL_VARIANTS = {
     "Old E2": {
         "kind": "directory",
         "repo": "abhinavnautiyalDS/multilingual-voice-language-classifier",
-        "branch": "main",
+        "branch": "version4.1",
         "path": "models/multilingual-bert-tiny-final",
     },
     "New E2": {
