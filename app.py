@@ -298,6 +298,7 @@ if st.session_state.running and agent is not None:
 
         st.write(f"**Audio:** {agent.audio_frames_received:,} browser frames / {agent.audio_bytes_sent:,} bytes sent to Saaras")
         st.write(f"**Last Saaras event:** `{agent.last_stt_event or '—'}`")
+        st.caption("For live partial transcription, watch whether the last event changes to transcript.partial while you are speaking.")
         st.markdown("### Turn buffering")
         bc1, bc2, bc3 = st.columns(3)
         bc1.metric("Buffering", "Enabled" if agent.turn_buffer_enabled else "Disabled")
