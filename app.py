@@ -88,7 +88,6 @@ with st.expander("Test the turn rule manually", expanded=True):
     with tb2:
         test_turn2 = st.text_area("Turn 2 (optional)", value="mujhe appointment chahiye", key="sarvam_test_turn2", height=80)
     test_ack = st.checkbox("Treat Turn 1 as a known meaningful acknowledgement", value=False, key="sarvam_test_ack")
-    test_entity = st.checkbox("Turn 1 may be a name/company/acronym", value=True, key="sarvam_test_entity")
     test_threshold = st.slider("Reliability threshold", 0.30, 0.95, 0.65, 0.05, key="sarvam_test_threshold")
     test_ref_words = st.slider("Reference word count", 2, 10, 5, key="sarvam_test_ref_words")
     if st.button("Calculate full flow", type="secondary", key="sarvam_run_turn_test"):
@@ -120,7 +119,7 @@ with st.expander("Test the turn rule manually", expanded=True):
             if test_ack:
                 decision = "CLASSIFY_NOW"
                 reason = "Manual acknowledgement override bypasses short-turn buffering."
-            elif (test_entity and short_hint) or short_hint:
+            elif short_hint:
                 decision = "COMBINE_WITH_NEXT" if second else "BUFFER_AND_WAIT"
                 reason = "Short-turn heuristic: hold a possible name, company, acronym, fragment, or noisy ASR chunk briefly."
             elif reliability < test_threshold:
