@@ -300,6 +300,10 @@ if st.session_state.running and agent is not None:
         st.write(f"**Last Saaras event:** `{agent.last_stt_event or '—'}`")
         st.caption("For live partial transcription, watch whether the last event changes to transcript.partial while you are speaking.")
         st.markdown("### Turn buffering")
+        reliability = getattr(agent, "last_turn_reliability", None)
+        if reliability is not None:
+            st.metric("Turn reliability score", f"{reliability:.3f}")
+            st.caption(f"Decision threshold: {getattr(agent, 'turn_reliability_threshold', 0.65):.2f} · Formula features: {getattr(agent, 'last_turn_reliability_details', {})}")
         bc1, bc2, bc3 = st.columns(3)
         bc1.metric("Buffering", "Enabled" if agent.turn_buffer_enabled else "Disabled")
         bc2.metric("Buffered turn", "Waiting" if agent.turn_buffer_text else "Empty")
