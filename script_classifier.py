@@ -21,6 +21,7 @@ MODEL_VARIANTS = {
         "repo": "abhinavnautiyalDS/Real-Time-Language-Switching-for-Voice-Agents",
         "branch": "version4.1",
         "path": "models/bert_tiny_e2_multilingual_version4.3.zip",
+        "url": "https://github.com/abhinavnautiyalDS/Real-Time-Language-Switching-for-Voice-Agents/raw/refs/heads/version4.1/models/bert_tiny_e2_multilingual_version4.3.zip",
     },
     "New E2": {
         "kind": "zip",
@@ -84,7 +85,7 @@ def _ensure_model_files(variant: str) -> Path:
         archive = model_cache / Path(spec["path"]).name
         if not archive.exists() or archive.stat().st_size < 1024:
             source_repo = spec.get("repo", CLASSIFIER_REPO)
-            url = (
+            url = spec.get("url") or (
                 f"https://media.githubusercontent.com/media/"
                 f"{source_repo}/{spec['branch']}/{spec['path']}"
             )
