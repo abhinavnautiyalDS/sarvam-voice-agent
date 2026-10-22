@@ -10,6 +10,7 @@ from streamlit_webrtc import (
 )
 
 from cloud_voice import CloudVoiceAgent
+from script_classifier import classify_transcript as classify_language_transcript
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -76,6 +77,85 @@ with st.expander("Voice model settings", expanded=True):
         help="If no compatible next turn arrives, the buffered text is flushed and processed alone.",
     )
     st.caption("Experimental heuristic: short turns (usually 1–2 words) are buffered unless they match a known acknowledgement. No additional training is used.")
+
+st.divider()
+st.subheader("🧪 Turn-buffering test bench")
+st.write("Type ASR turns to preview the rule and the actual selected BERT-Tiny model prediction before testing with the microphone.")
+with st.expander("Test the turn rule manually", expanded=True):
+    tb1, tb2 = st.columns(2)
+    with tb1:
+        test_turn1 = st.text_area("Turn 1", value="Rahul", key="sarvam_test_turn1", height=80)
+    with tb2:
+        test_turn2 = st.text_area("Turn 2 (optional)", value="mujhe appointment chahiye", key="sarvam_test_turn2", height=80)
+    test_ack = st.checkbox("Treat Turn 1 as a known meaningful acknowledgement", value=False, key="sarvam_test_ack")
+    test_entity = st.checkbox("Turn 1 may be a name/company/acronym", value=True, key="sarvam_test_entity")
+    test_threshold = st.slider("Reliability threshold", 0.30, 0.95, 0.65, 0.05, key="sarvam_test_threshold")
+    test_ref_words = st.slider("Reference word count", 2, 10, 5, key="sarvam_test_ref_words")
+    if st.button("Calculate full flow", type="secondary", key="sarvam_run_turn_test"):
+        first = " ".join(test_turn1.split())
+        second = " ".join(test_turn2.split())
+        if not first:
+            st.error("Enter Turn 1.")
+        else:
+            result1 = classify_language_transcript(first, classifier_variant)
+            words = first.split()
+            n = len(words)
+            length_score = min(n / test_ref_words, 1.0)
+            filler_words = {"um", "umm", "uh", "uhh", "hmm", "hmmm", "erm"}
+            meaningful_ratio = sum(w.lower().strip(".,!?;:") not in filler_words for w in words) / max(n, 1)
+            normalized = first.lower().strip(" .,!?:;")
+            known_phrases = {"hello", "hi", "yes", "okay", "ok", "haan", "haan bilkul", "हाँ", "हां", "हाँ बिल्कुल", "बिल्कुल", "जी"}
+            phrase_match = 1.0 if normalized in known_phrases else 0.0
+            meaning_score = min(max(0.5 * meaningful_ratio + 0.5 * phrase_match, 0.0), 1.0)
+            import unicodedata
+            letters = [ch for ch in first if ch.isalpha()]
+            recognized = [ch for ch in letters if "LATIN" in unicodedata.name(ch, "") or any(
+                script in unicodedata.name(ch, "") for script in
+                ("DEVANAGARI", "GURMUKHI", "BENGALI", "GUJARATI", "TAMIL", "TELUGU", "KANNADA", "MALAYALAM", "ORIYA", "ODIA")
+            )]
+            script_score = len(recognized) / max(len(letters), 1)
+            confidence = float(result1.get("confidence") or 0.0)
+            reliability = (0.25 * length_score + 0.20 * meaning_score + 0.20 * confidence + 0.20 * script_score) / 0.85
+            short_hint = len(words) <= 2 and normalized not in known_phrases
+            if test_ack:
+                decision = "CLASSIFY_NOW"
+                reason = "Manual acknowledgement override bypasses short-turn buffering."
+            elif (test_entity and short_hint) or short_hint:
+                decision = "COMBINE_WITH_NEXT" if second else "BUFFER_AND_WAIT"
+                reason = "Short-turn heuristic: hold a possible name, company, acronym, fragment, or noisy ASR chunk briefly."
+            elif reliability < test_threshold:
+                decision = "COMBINE_WITH_NEXT" if second else "BUFFER_AND_WAIT"
+                reason = f"Reliability {reliability:.3f} is below threshold {test_threshold:.2f}."
+            else:
+                decision = "CLASSIFY_NOW"
+                reason = f"Reliability {reliability:.3f} meets/exceeds threshold {test_threshold:.2f}."
+            final_text = (first + " " + second).strip() if decision == "COMBINE_WITH_NEXT" else first
+            st.markdown("#### Feature calculations")
+            st.code(
+                f"Turn 1: {first}\nWord count n = {n}\n"
+                f"L = min(n / N_ref, 1) = min({n} / {test_ref_words}, 1) = {length_score:.3f}\n"
+                f"Meaningful-token ratio = {meaningful_ratio:.3f}\nKnown phrase match = {phrase_match:.1f}\n"
+                f"M = 0.5 × token_ratio + 0.5 × phrase_match = {meaning_score:.3f}\n"
+                f"C = selected BERT-Tiny top score = {confidence:.3f}\n"
+                f"S = recognized-script coverage = {len(recognized)} / max({len(letters)}, 1) = {script_score:.3f}\n"
+                f"R = (0.25L + 0.20M + 0.20C + 0.20S) / 0.85 = {reliability:.3f}\n"
+                f"Threshold = {test_threshold:.2f}\nDecision = {decision}"
+            )
+            st.caption(reason)
+            if not result1.get("available"):
+                st.warning(f"Turn 1 classifier prediction unavailable: {result1.get('reason', 'unknown')}")
+            else:
+                st.write(f"**Turn 1 model prediction:** {result1['label']} · score {confidence:.2%} · {result1.get('latency_ms', 0):.2f} ms")
+            st.write("**Text selected for classification:**")
+            st.code(final_text)
+            if decision == "BUFFER_AND_WAIT":
+                st.info(f"No second turn supplied. In live mode, Turn 1 waits up to {turn_buffer_timeout_ms} ms, then flushes alone.")
+            final_result = classify_language_transcript(final_text, classifier_variant)
+            if final_result.get("available"):
+                st.success(f"**Final prediction:** {final_result['label']} · score {float(final_result.get('confidence') or 0):.2%} · {final_result.get('latency_ms', 0):.2f} ms")
+                st.json(final_result.get("probabilities", {}))
+            else:
+                st.error(f"Final prediction unavailable: {final_result.get('reason', 'unknown')}")
 
 if st.button("Start voice agent", type="primary", disabled=st.session_state.running, use_container_width=True):
     try:
