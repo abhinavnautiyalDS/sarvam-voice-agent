@@ -217,7 +217,7 @@ if st.session_state.running and agent is not None:
 
         st.markdown("### 2. Context-aware multilingual BERT-Tiny classifier")
         classification = agent.last_classifier_result
-        st.caption("Classifier input (previous finalized caller turn + current turn):")
+        st.caption("Classifier input (current finalized caller turn only):")
         classifier_input = getattr(agent, "last_classifier_input", "") or agent.last_user_text or "Waiting for transcript..."
         st.code(classifier_input, language="text")
         if classification.get("available"):
