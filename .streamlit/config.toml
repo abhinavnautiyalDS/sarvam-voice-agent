@@ -1,0 +1,4 @@
+[server]
+# Avoid Streamlit's source watcher importing optional Transformers image modules.
+# The app uses text-only BERT-Tiny inference, so these image modules are unnecessary.
+fileWatcherType = "none"
