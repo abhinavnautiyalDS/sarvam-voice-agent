@@ -89,7 +89,18 @@ def _ensure_model_files(variant: str) -> Path:
                 f"https://media.githubusercontent.com/media/"
                 f"{source_repo}/{spec['branch']}/{spec['path']}"
             )
-            _download(url, archive)
+            try:
+                _download(url, archive)
+            except requests.HTTPError as first_error:
+                # GitHub's media host can return 404 for this ZIP even when the
+                # standard raw download URL works. Retry the known working URL.
+                fallback_url = spec.get("url")
+                if not fallback_url or fallback_url == url:
+                    raise
+                try:
+                    _download(fallback_url, archive)
+                except Exception:
+                    raise first_error
         extract_dir = model_cache / "extracted"
         config_matches = list(extract_dir.rglob("config.json")) if extract_dir.exists() else []
         if not config_matches:
