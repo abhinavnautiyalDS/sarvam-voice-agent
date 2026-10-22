@@ -17,10 +17,10 @@ MAX_LENGTH = 128
 
 MODEL_VARIANTS = {
     "Old E2": {
-        "kind": "directory",
-        "repo": "abhinavnautiyalDS/multilingual-voice-language-classifier",
+        "kind": "zip",
+        "repo": "abhinavnautiyalDS/Real-Time-Language-Switching-for-Voice-Agents",
         "branch": "version4.1",
-        "path": "models/multilingual-bert-tiny-final",
+        "path": "models/bert_tiny_e2_multilingual_version4.1.zip",
     },
     "New E2": {
         "kind": "zip",
