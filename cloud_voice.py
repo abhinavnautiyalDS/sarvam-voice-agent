@@ -313,8 +313,7 @@ class CloudVoiceAgent:
             self.error = f"{type(exc).__name__}: {exc}"
             self.llm_status = "Failed"
             self.pipeline_status = "LLM failed"
-            continue
-
+            return
         # Map language labels to BakBak's supported locale codes.
         tts_language_by_label = {
             "hi-IN": "hi", "en-IN": "en", "pa-IN": "pa", "bn-IN": "bn",
@@ -332,8 +331,7 @@ class CloudVoiceAgent:
             self.error = "Sarvam LLM returned an empty response"
             self.llm_status = "Failed — empty response"
             self.pipeline_status = "LLM failed"
-            continue
-
+            return
         self.last_assistant_text = response
         self.llm_status = "Completed"
         self.tts_status = "Generating speech with BakBak Raya"
@@ -345,13 +343,13 @@ class CloudVoiceAgent:
             self.error = f"{type(exc).__name__}: {exc}"
             self.tts_status = "Failed"
             self.pipeline_status = "BakBak failed"
-            continue
+            return
         if not audio:
             self.error_stage = "BakBak TTS"
             self.error = "BakBak returned empty audio"
             self.tts_status = "Failed — empty audio"
             self.pipeline_status = "BakBak failed"
-            continue
+            return
         try:
             self._enqueue_output(audio)
         except Exception as exc:
@@ -359,7 +357,7 @@ class CloudVoiceAgent:
             self.error = f"{type(exc).__name__}: {exc}"
             self.tts_status = "Audio generated, but output failed"
             self.pipeline_status = "WebRTC output failed"
-            continue
+            return
         self.tts_status = f"Ready — {len(audio):,} PCM bytes queued"
         self.pipeline_status = "Ready"
         self.stt_status = "Connected — waiting for speech"
