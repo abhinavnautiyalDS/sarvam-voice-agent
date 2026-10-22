@@ -31,6 +31,8 @@ class CloudVoiceAgent:
         classifier_enabled: bool = True,
         classifier_backend: str = "ml",
         classifier_model_variant: str = "Old E2",
+        turn_buffer_enabled: bool = True,
+        turn_buffer_timeout_ms: int = 500,
     ):
         self.sarvam_api_key = sarvam_api_key
         self.bakbak_api_key = bakbak_api_key
@@ -42,6 +44,13 @@ class CloudVoiceAgent:
         self.classifier_enabled = classifier_enabled
         self.classifier_backend = "bert_tiny"
         self.classifier_model_variant = classifier_model_variant
+        self.turn_buffer_enabled = bool(turn_buffer_enabled)
+        self.turn_buffer_timeout_ms = max(200, min(int(turn_buffer_timeout_ms), 1000))
+        self.turn_buffer_text = ""
+        self.turn_buffer_event = {}
+        self.turn_buffer_task = None
+        self.last_turn_buffer_decision = ""
+        self.last_combined_turn_text = ""
         self.current_response_language = "hindi"
         self.last_classifier_input = ""
 
@@ -91,6 +100,13 @@ class CloudVoiceAgent:
         self.last_stt_raw = ""
         self.last_detected_language = ""
         self.last_classifier_input = ""
+        self.turn_buffer_text = ""
+        self.turn_buffer_event = {}
+        self.last_turn_buffer_decision = ""
+        self.last_combined_turn_text = ""
+        if self.turn_buffer_task and not self.turn_buffer_task.done():
+            self.turn_buffer_task.cancel()
+        self.turn_buffer_task = None
         self.last_language_source = "Saaras"
         self.last_user_text = ""
         self.live_transcript = ""
@@ -102,6 +118,9 @@ class CloudVoiceAgent:
 
     def stop(self):
         self.running = False
+        if self.turn_buffer_task and not self.turn_buffer_task.done():
+            self.turn_buffer_task.cancel()
+        self.turn_buffer_task = None
         self.pipeline_status = "Stopped"
         self.stt_status = "Stopped"
         if self.thread and self.thread.is_alive():
@@ -198,125 +217,192 @@ class CloudVoiceAgent:
                     self.stt_status = "Final transcript event received — text missing"
                     continue
 
-                # Classify only the current finalized caller turn (single-turn inference).
-                classifier_input = transcript
-                self.last_classifier_input = classifier_input
-                self.last_user_text = transcript
-                self.live_transcript = transcript
-                self.stt_status = "Transcript received"
-                self.error = ""
-                self.error_stage = ""
-
-                if self.classifier_enabled:
-                    self.last_classifier_result = await asyncio.to_thread(
-                        classify_language_transcript,
-                        classifier_input,
-                        self.classifier_model_variant,
+                # Decide whether to process this finalized ASR chunk now or briefly buffer it.
+                if self.turn_buffer_text:
+                    previous = self.turn_buffer_text
+                    if self.turn_buffer_task and not self.turn_buffer_task.done():
+                        self.turn_buffer_task.cancel()
+                    self.turn_buffer_task = None
+                    self.turn_buffer_text = ""
+                    self.turn_buffer_event = {}
+                    combined = f"{previous} {transcript}".strip()
+                    self.last_turn_buffer_decision = "SECOND TURN → COMBINE_AND_CLASSIFY"
+                    self.last_combined_turn_text = combined
+                    await self._process_final_transcript(combined, event)
+                elif self.turn_buffer_enabled and self._should_buffer_short_turn(transcript):
+                    self.turn_buffer_text = transcript
+                    self.turn_buffer_event = event
+                    self.last_turn_buffer_decision = "SHORT TURN → BUFFER_AND_WAIT"
+                    self.classifier_status = f"Waiting for context ({self.turn_buffer_timeout_ms} ms)"
+                    self.turn_buffer_task = asyncio.create_task(
+                        self._flush_turn_buffer_after_timeout(event)
                     )
-                    result = self.last_classifier_result
-                    confidence = result.get("confidence")
-                    if result.get("available"):
-                        confidence_text = f" ({confidence:.0%})" if confidence is not None else " (score N/A)"
-                        self.classifier_status = f"{self.classifier_model_variant}: {result.get('label', 'unknown')}{confidence_text}"
-                    else:
-                        self.classifier_status = f"Language classifier unavailable ({result.get('reason', 'unknown')})"
                 else:
-                    self.last_classifier_result = {
-                        "label": "disabled", "confidence": 0.0, "probabilities": {},
-                        "latency_ms": 0.0, "available": False, "reason": "disabled",
-                    }
-                    self.classifier_status = "Disabled"
+                    self.last_turn_buffer_decision = "SUFFICIENT / MEANINGFUL TURN → CLASSIFY_NOW"
+                    self.last_combined_turn_text = transcript
+                    await self._process_final_transcript(transcript, event)
 
-                detected_language = event.get("language")
-                if not detected_language:
-                    data = event.get("data")
-                    if isinstance(data, dict):
-                        detected_language = data.get("language")
-                detected_language = str(detected_language or "unknown")
-                self.last_detected_language = detected_language
-
-                # The fine-tuned model predicts language, not writing script.
-                result = self.last_classifier_result
-                classifier_label = str(result.get("label", "none")) if result.get("available") else "none"
-                if not result.get("available"):
-                    self.last_language_source = "Language classifier unavailable; using Saaras metadata/context"
-                elif detected_language == "unknown":
-                    self.last_language_source = "Multilingual BERT-Tiny prediction (Saaras metadata missing)"
-                else:
-                    self.last_language_source = "Multilingual BERT-Tiny prediction; Saaras metadata retained for comparison"
-
-                response_language_by_label = {
-                    "hi-IN": "hindi", "en-IN": "english", "pa-IN": "punjabi",
-                    "bn-IN": "bengali", "gu-IN": "gujarati", "kn-IN": "kannada",
-                    "ml-IN": "malayalam", "mr-IN": "marathi", "ta-IN": "tamil",
-                    "te-IN": "telugu", "as-IN": "assamese",
-                }
-                if result.get("available") and classifier_label in response_language_by_label:
-                    self.current_response_language = response_language_by_label[classifier_label]
-
-                self.llm_status = "Generating response"
-                try:
-                    response = await self._get_llm_response(transcript, detected_language, result)
-                except Exception as exc:
-                    self.error_stage = "LLM"
-                    self.error = f"{type(exc).__name__}: {exc}"
-                    self.llm_status = "Failed"
-                    self.pipeline_status = "LLM failed"
-                    continue
-
-                # Map language labels to BakBak's supported locale codes.
-                tts_language_by_label = {
-                    "hi-IN": "hi", "en-IN": "en", "pa-IN": "pa", "bn-IN": "bn",
-                    "gu-IN": "gu", "kn-IN": "kn", "ml-IN": "ml", "mr-IN": "mr",
-                    "ta-IN": "ta", "te-IN": "te", "as-IN": "as",
-                }
-                tts_language = (
-                    tts_language_by_label[classifier_label]
-                    if result.get("available") and classifier_label in tts_language_by_label
-                    else ("en" if self.current_response_language == "english" else "hi")
-                )
-
-                if not response:
-                    self.error_stage = "LLM"
-                    self.error = "Sarvam LLM returned an empty response"
-                    self.llm_status = "Failed — empty response"
-                    self.pipeline_status = "LLM failed"
-                    continue
-
-                self.last_assistant_text = response
-                self.llm_status = "Completed"
-                self.tts_status = "Generating speech with BakBak Raya"
-                self.last_tts_input = response
-                try:
-                    audio = await self._get_bakbak_audio(response, language=tts_language)
-                except Exception as exc:
-                    self.error_stage = "BakBak TTS"
-                    self.error = f"{type(exc).__name__}: {exc}"
-                    self.tts_status = "Failed"
-                    self.pipeline_status = "BakBak failed"
-                    continue
-                if not audio:
-                    self.error_stage = "BakBak TTS"
-                    self.error = "BakBak returned empty audio"
-                    self.tts_status = "Failed — empty audio"
-                    self.pipeline_status = "BakBak failed"
-                    continue
-                try:
-                    self._enqueue_output(audio)
-                except Exception as exc:
-                    self.error_stage = "WebRTC output"
-                    self.error = f"{type(exc).__name__}: {exc}"
-                    self.tts_status = "Audio generated, but output failed"
-                    self.pipeline_status = "WebRTC output failed"
-                    continue
-                self.tts_status = f"Ready — {len(audio):,} PCM bytes queued"
-                self.pipeline_status = "Ready"
-                self.stt_status = "Connected — waiting for speech"
             elif event_type == "error":
                 code = event.get("code", "unknown")
                 message = event.get("message", "Sarvam realtime STT error")
                 self.error_stage = "STT"
                 raise RuntimeError(f"Sarvam STT error {code}: {message}")
+
+    async def _process_final_transcript(self, transcript: str, event: dict):
+        # Classify only the current finalized caller turn (single-turn inference).
+        classifier_input = transcript
+        self.last_classifier_input = classifier_input
+        self.last_user_text = transcript
+        self.live_transcript = transcript
+        self.stt_status = "Transcript received"
+        self.error = ""
+        self.error_stage = ""
+
+        if self.classifier_enabled:
+            self.last_classifier_result = await asyncio.to_thread(
+                classify_language_transcript,
+                classifier_input,
+                self.classifier_model_variant,
+            )
+            result = self.last_classifier_result
+            confidence = result.get("confidence")
+            if result.get("available"):
+                confidence_text = f" ({confidence:.0%})" if confidence is not None else " (score N/A)"
+                self.classifier_status = f"{self.classifier_model_variant}: {result.get('label', 'unknown')}{confidence_text}"
+            else:
+                self.classifier_status = f"Language classifier unavailable ({result.get('reason', 'unknown')})"
+        else:
+            self.last_classifier_result = {
+                "label": "disabled", "confidence": 0.0, "probabilities": {},
+                "latency_ms": 0.0, "available": False, "reason": "disabled",
+            }
+            self.classifier_status = "Disabled"
+
+        detected_language = event.get("language")
+        if not detected_language:
+            data = event.get("data")
+            if isinstance(data, dict):
+                detected_language = data.get("language")
+        detected_language = str(detected_language or "unknown")
+        self.last_detected_language = detected_language
+
+        # The fine-tuned model predicts language, not writing script.
+        result = self.last_classifier_result
+        classifier_label = str(result.get("label", "none")) if result.get("available") else "none"
+        if not result.get("available"):
+            self.last_language_source = "Language classifier unavailable; using Saaras metadata/context"
+        elif detected_language == "unknown":
+            self.last_language_source = "Multilingual BERT-Tiny prediction (Saaras metadata missing)"
+        else:
+            self.last_language_source = "Multilingual BERT-Tiny prediction; Saaras metadata retained for comparison"
+
+        response_language_by_label = {
+            "hi-IN": "hindi", "en-IN": "english", "pa-IN": "punjabi",
+            "bn-IN": "bengali", "gu-IN": "gujarati", "kn-IN": "kannada",
+            "ml-IN": "malayalam", "mr-IN": "marathi", "ta-IN": "tamil",
+            "te-IN": "telugu", "as-IN": "assamese",
+        }
+        if result.get("available") and classifier_label in response_language_by_label:
+            self.current_response_language = response_language_by_label[classifier_label]
+
+        self.llm_status = "Generating response"
+        try:
+            response = await self._get_llm_response(transcript, detected_language, result)
+        except Exception as exc:
+            self.error_stage = "LLM"
+            self.error = f"{type(exc).__name__}: {exc}"
+            self.llm_status = "Failed"
+            self.pipeline_status = "LLM failed"
+            continue
+
+        # Map language labels to BakBak's supported locale codes.
+        tts_language_by_label = {
+            "hi-IN": "hi", "en-IN": "en", "pa-IN": "pa", "bn-IN": "bn",
+            "gu-IN": "gu", "kn-IN": "kn", "ml-IN": "ml", "mr-IN": "mr",
+            "ta-IN": "ta", "te-IN": "te", "as-IN": "as",
+        }
+        tts_language = (
+            tts_language_by_label[classifier_label]
+            if result.get("available") and classifier_label in tts_language_by_label
+            else ("en" if self.current_response_language == "english" else "hi")
+        )
+
+        if not response:
+            self.error_stage = "LLM"
+            self.error = "Sarvam LLM returned an empty response"
+            self.llm_status = "Failed — empty response"
+            self.pipeline_status = "LLM failed"
+            continue
+
+        self.last_assistant_text = response
+        self.llm_status = "Completed"
+        self.tts_status = "Generating speech with BakBak Raya"
+        self.last_tts_input = response
+        try:
+            audio = await self._get_bakbak_audio(response, language=tts_language)
+        except Exception as exc:
+            self.error_stage = "BakBak TTS"
+            self.error = f"{type(exc).__name__}: {exc}"
+            self.tts_status = "Failed"
+            self.pipeline_status = "BakBak failed"
+            continue
+        if not audio:
+            self.error_stage = "BakBak TTS"
+            self.error = "BakBak returned empty audio"
+            self.tts_status = "Failed — empty audio"
+            self.pipeline_status = "BakBak failed"
+            continue
+        try:
+            self._enqueue_output(audio)
+        except Exception as exc:
+            self.error_stage = "WebRTC output"
+            self.error = f"{type(exc).__name__}: {exc}"
+            self.tts_status = "Audio generated, but output failed"
+            self.pipeline_status = "WebRTC output failed"
+            continue
+        self.tts_status = f"Ready — {len(audio):,} PCM bytes queued"
+        self.pipeline_status = "Ready"
+        self.stt_status = "Connected — waiting for speech"
+
+    @staticmethod
+    def _is_meaningful_short_turn(text: str) -> bool:
+        normalized = " ".join(text.lower().strip().split()).strip(" .,!?:;")
+        acknowledgements = {
+            "hello", "hi", "hey", "yes", "yeah", "yep", "no", "nope",
+            "okay", "ok", "thanks", "thank you", "sorry", "right",
+            "haan", "han", "haan bilkul", "bilkul", "ji", "achha", "accha",
+            "हाँ", "हां", "हाँ बिल्कुल", "हां बिल्कुल", "बिल्कुल", "जी", "अच्छा",
+            "ਸਤ ਸ੍ਰੀ ਅਕਾਲ", "ਹਾਂ", "ਠੀਕ ਹੈ", "ঠিক আছে", "হ্যাঁ",
+        }
+        return normalized in acknowledgements
+
+    @staticmethod
+    def _should_buffer_short_turn(text: str) -> bool:
+        words = text.split()
+        if not words or len(words) > 2:
+            return False
+        if CloudVoiceAgent._is_meaningful_short_turn(text):
+            return False
+        # Conservative heuristic: a short finalized ASR chunk may be a name,
+        # company, acronym, fragment, or noisy recognition. It is not labelled
+        # "none"; we wait briefly for more lexical context.
+        return True
+
+    async def _flush_turn_buffer_after_timeout(self, original_event: dict):
+        try:
+            await asyncio.sleep(self.turn_buffer_timeout_ms / 1000.0)
+            if not self.running or not self.turn_buffer_text:
+                return
+            buffered = self.turn_buffer_text
+            buffered_event = self.turn_buffer_event or original_event
+            self.turn_buffer_text = ""
+            self.turn_buffer_event = {}
+            self.turn_buffer_task = None
+            self.last_turn_buffer_decision = "TIMEOUT → FLUSH_AND_CLASSIFY"
+            self.last_combined_turn_text = buffered
+            await self._process_final_transcript(buffered, buffered_event)
+        except asyncio.CancelledError:
+            return
 
     @staticmethod
     def _extract_transcript(event: dict) -> str:
