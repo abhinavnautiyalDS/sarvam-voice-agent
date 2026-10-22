@@ -3,7 +3,6 @@ import base64
 import json
 import os
 import queue
-import re
 import threading
 import time
 import urllib.parse
@@ -44,8 +43,6 @@ class CloudVoiceAgent:
         self.classifier_backend = "bert_tiny"
         self.classifier_model_variant = classifier_model_variant
         self.current_response_language = "hindi"
-        # Previous finalized caller turn helps disambiguate short/code-mixed turns.
-        self.previous_user_text = ""
         self.last_classifier_input = ""
 
         self.audio_in = queue.Queue(maxsize=100)
@@ -93,7 +90,6 @@ class CloudVoiceAgent:
         self.last_stt_event = ""
         self.last_stt_raw = ""
         self.last_detected_language = ""
-        self.previous_user_text = ""
         self.last_classifier_input = ""
         self.last_language_source = "Saaras"
         self.last_user_text = ""
@@ -202,11 +198,8 @@ class CloudVoiceAgent:
                     self.stt_status = "Final transcript event received — text missing"
                     continue
 
-                # Classify previous + current finalized caller turns together.
-                # This gives the model context when the current turn is only a term
-                # such as "BTECH", rather than evidence of an actual language switch.
-                previous_turn = self.previous_user_text.strip()
-                classifier_input = f"{previous_turn}\n{transcript}" if previous_turn else transcript
+                # Classify only the current finalized caller turn (single-turn inference).
+                classifier_input = transcript
                 self.last_classifier_input = classifier_input
                 self.last_user_text = transcript
                 self.live_transcript = transcript
@@ -258,40 +251,8 @@ class CloudVoiceAgent:
                     "ml-IN": "malayalam", "mr-IN": "marathi", "ta-IN": "tamil",
                     "te-IN": "telugu", "as-IN": "assamese",
                 }
-                # A standalone uppercase acronym is not reliable evidence of a language
-                # switch. Keep the established conversation language for terms like BTECH.
-                is_standalone_acronym = bool(
-                    previous_turn
-                    and re.fullmatch(r"[A-Z][A-Z0-9.+#-]{1,15}", transcript.strip())
-                )
-                previous_language_label = next(
-                    (label for label, language in response_language_by_label.items()
-                     if language == self.current_response_language),
-                    None,
-                )
-                if (
-                    result.get("available")
-                    and is_standalone_acronym
-                    and previous_language_label
-                    and classifier_label != previous_language_label
-                ):
-                    result = dict(result)
-                    result["raw_prediction_label"] = classifier_label
-                    result["label"] = previous_language_label
-                    result["context_override"] = "standalone_acronym_kept_previous_language"
-                    classifier_label = previous_language_label
-                    self.last_classifier_result = result
-                    self.classifier_status = (
-                        f"{self.classifier_model_variant}: {classifier_label} "
-                        f"(retained for standalone acronym; raw prediction: "
-                        f"{result['raw_prediction_label']})"
-                    )
                 if result.get("available") and classifier_label in response_language_by_label:
                     self.current_response_language = response_language_by_label[classifier_label]
-
-                # Advance history after classification so each inference sees exactly
-                # the previous finalized caller turn plus the current one.
-                self.previous_user_text = transcript
 
                 self.llm_status = "Generating response"
                 try:
