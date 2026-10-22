@@ -16,7 +16,7 @@ CACHE_ROOT = Path(os.getenv("LANGUAGE_CLASSIFIER_CACHE", ".language_classifier_c
 MAX_LENGTH = 128
 
 MODEL_VARIANTS = {
-    "Old E2": {
+    "4.3": {
         "kind": "zip",
         "repo": "abhinavnautiyalDS/Real-Time-Language-Switching-for-Voice-Agents",
         "branch": "version4.1",
@@ -39,7 +39,7 @@ MODEL_VARIANTS = {
         "path": "models/bert_tiny_e2_multilingual_version4.zip",
     },
 }
-DEFAULT_VARIANT = os.getenv("LANGUAGE_CLASSIFIER_VARIANT", "Old E2")
+DEFAULT_VARIANT = os.getenv("LANGUAGE_CLASSIFIER_VARIANT", "4.3")
 _REQUIRED_FILES = ("config.json", "model.safetensors", "tokenizer.json")
 _MODELS = {}
 
