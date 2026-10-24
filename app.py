@@ -59,7 +59,7 @@ with st.expander("Voice model settings", expanded=True):
         ["4.3", "New E2", "Version 4 (New E2)", "Version 4.1", "4.4"],
         index=0,
         disabled=st.session_state.running,
-        help="Select one of the four multilingual BERT-Tiny checkpoints. Version 4.3 is the latest model from the version4.1 branch. The selected model is cached after its first download.",
+        help="Select among the available multilingual BERT-Tiny checkpoints, including 4.4 from the realtime-v4.4 branch. The selected model is cached after its first download.",
     )
     st.caption(f"Selected classifier: {classifier_variant}")
     st.info("Language classification uses the selected 12-label BERT-Tiny model (Indian language labels plus none).")
