@@ -56,7 +56,7 @@ with st.expander("Voice model settings", expanded=True):
     )
     classifier_variant = st.selectbox(
         "Language classifier model",
-        ["4.3", "New E2", "Version 4 (New E2)", "Version 4.1"],
+        ["4.3", "New E2", "Version 4 (New E2)", "Version 4.1", "4.4"],
         index=0,
         disabled=st.session_state.running,
         help="Select one of the four multilingual BERT-Tiny checkpoints. Version 4.3 is the latest model from the version4.1 branch. The selected model is cached after its first download.",
