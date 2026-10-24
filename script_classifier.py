@@ -39,6 +39,12 @@ MODEL_VARIANTS = {
         "branch": "version4",
         "path": "models/bert_tiny_e2_multilingual_version4.zip",
     },
+    "4.4": {
+        "kind": "directory",
+        "repo": "abhinavnautiyalDS/Real-Time-Language-Switching-for-Voice-Agents",
+        "branch": "realtime-v4.4",
+        "path": "models/multilingual-bert-tiny-final",
+    },
 }
 DEFAULT_VARIANT = os.getenv("LANGUAGE_CLASSIFIER_VARIANT", "4.3")
 _REQUIRED_FILES = ("config.json", "model.safetensors", "tokenizer.json")
