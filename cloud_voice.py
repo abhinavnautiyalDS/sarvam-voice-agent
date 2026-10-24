@@ -56,7 +56,7 @@ class CloudVoiceAgent:
         self.last_combined_turn_text = ""
         self.current_response_language = "hindi"
         # Session-scoped, bounded memory for conversational continuity.
-        self.conversation_turn_history = []
+        self.previous_turn_context = None
         self.last_classifier_input = ""
 
         self.audio_in = queue.Queue(maxsize=100)
@@ -109,7 +109,7 @@ class CloudVoiceAgent:
         self.turn_buffer_event = {}
         self.last_turn_buffer_decision = ""
         self.last_combined_turn_text = ""
-        self.conversation_turn_history = []
+        self.previous_turn_context = None
         self.current_response_language = "hindi"
         if self.turn_buffer_task and not self.turn_buffer_task.done():
             self.turn_buffer_task.cancel()
@@ -379,13 +379,12 @@ class CloudVoiceAgent:
             self.pipeline_status = "LLM failed"
             return
         self.last_assistant_text = response
-        self.conversation_turn_history.append({
+        self.previous_turn_context = {
             "user": transcript,
             "assistant": response,
             "classifier_tag": classifier_label,
             "response_language": self.current_response_language,
-        })
-        self.conversation_turn_history = self.conversation_turn_history[-6:]
+        }
         self.llm_status = "Completed"
         self.tts_status = "Generating speech with BakBak Raya"
         self.last_tts_input = response
@@ -514,12 +513,17 @@ class CloudVoiceAgent:
             )
         # Keep behavior, language rules, and classifier metadata separate from caller input.
         # This prevents Gemma from treating the internal prompt/context as text to repeat.
-        prior_turns = self.conversation_turn_history[-4:]
-        prior_context = "\n".join(
-            f"Previous turn {i + 1}: caller={turn['user']!r}; classifier_tag={turn['classifier_tag']}; "
-            f"assistant={turn['assistant']!r}; response_language={turn['response_language']}."
-            for i, turn in enumerate(prior_turns)
-        ) or "No previous completed turns in this voice session."
+        previous_turn = self.previous_turn_context
+        prior_turns = [previous_turn] if previous_turn else []
+        if previous_turn:
+            prior_context = (
+                f"Immediately previous turn only: caller={previous_turn['user']!r}; "
+                f"classifier_tag={previous_turn['classifier_tag']}; "
+                f"assistant={previous_turn['assistant']!r}; "
+                f"response_language={previous_turn['response_language']}."
+            )
+        else:
+            prior_context = "No previous completed turn in this voice session."
         prompt_context = (
             f"{system_prompt}\n{language_instruction}\n"
             f"Latest Saaras language metadata: {detected_language}.\n"
