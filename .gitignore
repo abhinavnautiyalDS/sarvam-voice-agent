@@ -5,3 +5,5 @@ __pycache__/
 *.wav
 .streamlit/
 models/language_classifier.joblib
+# Runtime knowledge-base data (never commit customer or institution documents)
+data/knowledge_base/
