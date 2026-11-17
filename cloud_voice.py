@@ -44,6 +44,9 @@ class CloudVoiceAgent:
         self.gemma_api_key = gemma_api_key
         self.knowledge_base = knowledge_base
         self.kb_embedder = kb_embedder
+        self.last_retrieval_results = []
+        self.last_retrieval_latency_ms = None
+        self.last_retrieval_status = "idle"
         self.tts_model = tts_model
         self.classifier_enabled = classifier_enabled
         self.classifier_backend = "bert_tiny"
@@ -476,18 +479,31 @@ class CloudVoiceAgent:
         return bool(re.search(pattern, text, flags=re.IGNORECASE))
 
     async def _retrieve_kb(self, user_text: str) -> list[dict]:
+        started = time.perf_counter()
         if not self.knowledge_base or not self.kb_embedder:
+            self.last_retrieval_status = "unavailable"
+            self.last_retrieval_results = []
             return []
         try:
-            return await self.knowledge_base.retrieve(
+            results = await self.knowledge_base.retrieve(
                 user_text, self.kb_embedder,
                 top_k=int(os.getenv("AURA_KB_TOP_K", "4")),
                 threshold=float(os.getenv("AURA_KB_SCORE_THRESHOLD", "0.42")),
             )
+            self.last_retrieval_results = [
+                {key: item.get(key) for key in ("title", "source", "category", "score", "chunk_id")}
+                for item in results
+            ]
+            self.last_retrieval_status = "matched" if results else "no_match"
+            return results
         except Exception as exc:
+            self.last_retrieval_status = "error"
+            self.last_retrieval_results = []
             self.error = f"Knowledge retrieval unavailable: {type(exc).__name__}: {exc}"
             self.error_stage = "Knowledge retrieval"
             return []
+        finally:
+            self.last_retrieval_latency_ms = round((time.perf_counter() - started) * 1000, 1)
 
     @staticmethod
     def _format_kb_context(hits: list[dict]) -> str:
