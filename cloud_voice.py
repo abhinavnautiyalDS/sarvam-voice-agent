@@ -181,7 +181,7 @@ class CloudVoiceAgent:
             receiver = asyncio.create_task(self._receive_stt(ws))
             sender = asyncio.create_task(self._send_stt(ws))
             done, pending = await asyncio.wait(
-                {receiver, sender}, return_when=asyncio.FIRST_EXCEPTION
+                {receiver, sender}, return_when=asyncio.FIRST_COMPLETED
             )
             for task in pending:
                 task.cancel()
