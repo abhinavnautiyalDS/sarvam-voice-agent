@@ -74,7 +74,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if "*" in allowed_origins else allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET", "PUT"],
+    allow_methods=["GET", "POST", "PUT"],
     allow_headers=["*"],
 )
 
@@ -219,6 +219,8 @@ async def voice_socket(websocket: WebSocket):
         classifier_enabled=True,
         classifier_backend="bert_tiny",
         classifier_model_variant="4.4",
+        knowledge_base=knowledge_base,
+        kb_embedder=(GeminiEmbedder(os.getenv("GEMINI_API_KEY", ""), os.getenv("AURA_KB_EMBEDDING_MODEL", DEFAULT_MODEL), int(os.getenv("AURA_KB_EMBEDDING_DIMENSIONS", str(DEFAULT_DIMENSIONS)))) if os.getenv("GEMINI_API_KEY") else None),
         turn_buffer_enabled=os.getenv("TURN_BUFFER_ENABLED", "false").lower() == "true",
         turn_buffer_timeout_ms=int(os.getenv("TURN_BUFFER_TIMEOUT_MS", "500")),
     )
