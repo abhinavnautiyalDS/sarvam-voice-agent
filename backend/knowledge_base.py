@@ -68,6 +68,22 @@ def _build_index(conn: sqlite3.Connection):
     return index
 
 
+def _search_index(conn: sqlite3.Connection):
+    expected = conn.execute("SELECT COUNT(*) n FROM chunks").fetchone()["n"]
+    if INDEX_PATH.exists():
+        try:
+            index = faiss.read_index(str(INDEX_PATH))
+            if index.d == DIMENSIONS and index.ntotal == expected:
+                return index
+        except Exception:
+            pass
+    index = _build_index(conn)
+    temporary = INDEX_PATH.with_suffix(".faiss.tmp")
+    faiss.write_index(index, str(temporary))
+    os.replace(temporary, INDEX_PATH)
+    return index
+
+
 def status() -> dict[str, Any]:
     with _LOCK:
         conn = _connect()
@@ -152,7 +168,7 @@ def retrieve(query: str, top_k: int = 4) -> list[dict[str, Any]]:
     with _LOCK:
         conn = _connect()
         try:
-            index = _build_index(conn)
+            index = _search_index(conn)
             if index.ntotal == 0:
                 return []
             scores, ids = index.search(vector, min(max(1, top_k), index.ntotal))
