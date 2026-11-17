@@ -475,7 +475,7 @@ class CloudVoiceAgent:
 
     @staticmethod
     def _requires_verified_kb(text: str) -> bool:
-        pattern = r"\b(fee|fees|tuition|scholarship|admission|application|eligib|programme|program|course|curriculum|placement|salary|outcome|deadline|last date|cut.?off|campus|hostel|university|college|accreditation|faculty|batch|intake|seat|duration)\b"
+        pattern = r"\b(fee|fees|tuition|scholarship|admission|application|eligib|programme|program|course|curriculum|placement|salary|outcome|deadline|last date|cut.?off|campus|hostel|university|college|accreditation|faculty|batch|intake|seat|duration|फीस|शुल्क|प्रवेश|एडमिशन|योग्यता|पात्रता|पाठ्यक्रम|कोर्स|प्लेसमेंट|छात्रवृत्ति|अंतिम तिथि|फैकल्टी|छात्रावास|विश्वविद्यालय|कॉलेज|कटऑफ|अवधि)\b"
         return bool(re.search(pattern, text, flags=re.IGNORECASE))
 
     async def _retrieve_kb(self, user_text: str) -> list[dict]:
