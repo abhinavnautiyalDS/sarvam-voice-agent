@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from cloud_voice import CloudVoiceAgent
 from admin_config import get_setting, public_config, save_config
+from backend import knowledge_base
 
 load_dotenv()
 
@@ -85,6 +86,33 @@ async def admin_update_config(request: Request):
         raise HTTPException(status_code=400, detail="No supported settings supplied")
     save_config(updates)
     return {"status": "saved", "config": public_config(), "note": "New voice sessions will use the updated settings."}
+
+
+
+@app.get("/api/knowledge/status")
+async def knowledge_status():
+    return knowledge_base.status()
+
+
+@app.get("/api/knowledge/documents")
+async def knowledge_documents():
+    return {"documents": knowledge_base.list_documents()}
+
+
+@app.get("/api/knowledge/documents/{document_id}/chunks")
+async def knowledge_document_chunks(document_id: str):
+    if document_id not in {item["id"] for item in knowledge_base.list_documents()}:
+        raise HTTPException(status_code=404, detail="Knowledge document not found")
+    return {"chunks": knowledge_base.list_chunks(document_id)}
+
+
+@app.put("/api/admin/knowledge/enabled")
+async def knowledge_enabled(request: Request):
+    _require_admin_ip(request)
+    body = await request.json()
+    if not isinstance(body, dict) or not isinstance(body.get("enabled"), bool):
+        raise HTTPException(status_code=400, detail="Expected {enabled: boolean}")
+    return knowledge_base.set_enabled(body["enabled"])
 
 
 @app.get("/api/health")
