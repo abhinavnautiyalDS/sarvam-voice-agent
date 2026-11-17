@@ -1,18 +1,7 @@
-"""Load the repository's canonical voice-agent system prompt."""
-import os
+"""Compatibility import; implementation lives in backend/app."""
+import sys
 from pathlib import Path
-
-
-def get_system_prompt() -> str:
-    """Prefer the checked-in prompt; use the environment variable only as fallback."""
-    prompt_path = Path(__file__).with_name("system_prompt.txt")
-    try:
-        prompt = prompt_path.read_text(encoding="utf-8").strip()
-    except OSError:
-        prompt = ""
-    if prompt:
-        return prompt
-    return os.getenv(
-        "VOICE_SYSTEM_PROMPT",
-        "You are a concise, natural voice assistant. Answer directly. Avoid markdown, bullets, and emojis.",
-    )
+_BACKEND_DIR = str(Path(__file__).resolve().parent / "backend")
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+from app.system_prompt import *  # noqa: F401,F403,E402
