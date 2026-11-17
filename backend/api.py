@@ -13,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.cloud_voice import CloudVoiceAgent
 from backend.admin_config import get_setting, public_config, save_config
 from backend import knowledge_base
-from backend import knowledge_base
 
 load_dotenv()
 
