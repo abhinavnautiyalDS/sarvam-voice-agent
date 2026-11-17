@@ -216,6 +216,17 @@ class KnowledgeBase:
             self._rebuild_index()
         return {"document_id": document_id, "title": title, "chunks_created": len(chunk_rows), "status": "indexed"}
 
+    def delete_document(self, document_id: str) -> bool:
+        with self.lock:
+            with self._connect() as db:
+                exists = db.execute("SELECT 1 FROM documents WHERE id=?", (document_id,)).fetchone()
+                if not exists:
+                    return False
+                db.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
+                db.execute("DELETE FROM documents WHERE id=?", (document_id,))
+            self._rebuild_index()
+        return True
+
     def list_documents(self) -> list[dict[str, Any]]:
         with self._connect() as db:
             rows = db.execute("SELECT id, title, source, category, created_at, updated_at, chunk_count FROM documents ORDER BY updated_at DESC").fetchall()
