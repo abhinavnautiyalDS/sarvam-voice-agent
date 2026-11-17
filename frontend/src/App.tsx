@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AuraVoiceClient, type AuraVoiceState } from './voiceClient';
 import KnowledgeBase from './KnowledgeBase';
-import { Activity, AudioLines, BarChart3, BrainCircuit, Check, ChevronDown, ChevronRight, Clock3, Cpu, Database, FileText, Globe2, History, Headphones, GraduationCap, Layers3, Mic, Network, Pause, Play, Radio, Search, Settings, ShieldCheck, Sparkles, Square, Volume2, Workflow } from 'lucide-react';
+import { Activity, AudioLines, BarChart3, BrainCircuit, Check, ChevronDown, ChevronRight, Clock3, Cpu, Database, FileText, Globe2, History, GraduationCap, Layers3, Mic, Network, Pause, Play, Radio, Search, Settings, ShieldCheck, Sparkles, Square, Volume2, Workflow } from 'lucide-react';
 
 type Tab='playground'|'knowledge'|'pipeline'|'evaluation'|'settings';
 type AgentKey='general'|'customer_service'|'tutor';
 const agents:{id:AgentKey;name:string;description:string;voice:string;icon:any}[]=[
 {id:'general',name:'General AI Assistant',description:'Open conversations, questions and everyday problem-solving.',voice:'3fe4afbc-3bde-4c97-ab8e-37e3fb8c7ba2',icon:Sparkles},
-{id:'customer_service',name:'Customer Service',description:'Product questions, troubleshooting and support guidance.',voice:'029d327b-987b-4879-8375-454cba8424ec',icon:Headphones},
+{id:'customer_service',name:'Course Counsellor',description:'Explore courses, fees, sessions, admissions and student support.',voice:'029d327b-987b-4879-8375-454cba8424ec',icon:GraduationCap},
 {id:'tutor',name:'AI Tutor',description:'Learn concepts with examples, explanations and guided practice.',voice:'0ffd8c73-7c39-4b22-92f4-ebf33a6fae2c',icon:GraduationCap}
 ];
 type Turn={id:number;user:string;language:string;confidence:string;answer:string;summary:string;time:string};
