@@ -18,6 +18,7 @@ export type AuraVoiceState = {
 type VoiceClientOptions = {
   onState: (state: AuraVoiceState) => void;
   onStatus: (status: string) => void;
+  onAudioLevel: (level: number) => void;
 };
 
 export class AuraVoiceClient {
@@ -29,9 +30,13 @@ export class AuraVoiceClient {
   private playbackAt = 0;
   private stopped = false;
   private readonly options: VoiceClientOptions;
+  private analyser?: AnalyserNode;
+  private animationFrame = 0;
+  private readonly agent: string;
 
   constructor(options: VoiceClientOptions, agent: string = "general") {
     this.options = options;
+    this.agent = agent;
   }
 
   async start() {
@@ -40,7 +45,7 @@ export class AuraVoiceClient {
     const configured = import.meta.env.VITE_AURA_WS_URL as string | undefined;
     const baseUrl = configured || `${secure ? 'wss' : 'ws'}://${window.location.host}/ws/voice`;
     const separator = baseUrl.includes("?") ? "&" : "?";
-    const wsUrl = `${baseUrl}${separator}agent=${encodeURIComponent(agent)}`;
+    const wsUrl = `${baseUrl}${separator}agent=${encodeURIComponent(this.agent)}`;
     this.options.onStatus('Connecting to AURA backend…');
 
     this.socket = new WebSocket(wsUrl);
@@ -68,6 +73,10 @@ export class AuraVoiceClient {
     this.context = new AudioContext();
     await this.context.resume();
     this.source = this.context.createMediaStreamSource(this.stream);
+    this.analyser = this.context.createAnalyser();
+    this.analyser.fftSize = 256;
+    this.source.connect(this.analyser);
+    this.trackInputLevel();
     this.processor = this.context.createScriptProcessor(4096, 1, 1);
     this.processor.onaudioprocess = (event) => {
       if (!this.socket || this.socket.readyState !== WebSocket.OPEN || this.stopped) return;
@@ -93,6 +102,18 @@ export class AuraVoiceClient {
     this.options.onStatus('Microphone connected · listening');
   }
 
+  private trackInputLevel() {
+    if (!this.analyser || this.stopped) return;
+    const samples = new Uint8Array(this.analyser.fftSize);
+    this.analyser.getByteTimeDomainData(samples);
+    let energy = 0;
+    for (const sample of samples) { const centered = (sample - 128) / 128; energy += centered * centered; }
+    const rms = Math.sqrt(energy / samples.length);
+    const level = Math.min(1, Math.max(0, (rms - 0.012) * 7));
+    this.options.onAudioLevel(level);
+    this.animationFrame = window.requestAnimationFrame(() => this.trackInputLevel());
+  }
+
   private playPcm(data: ArrayBuffer) {
     if (!this.context || !data.byteLength) return;
     const pcm = new Int16Array(data);
@@ -109,6 +130,9 @@ export class AuraVoiceClient {
 
   stop() {
     this.stopped = true;
+    if (this.animationFrame) window.cancelAnimationFrame(this.animationFrame);
+    this.options.onAudioLevel(0);
+    this.analyser?.disconnect();
     this.processor?.disconnect();
     this.source?.disconnect();
     this.stream?.getTracks().forEach((track) => track.stop());
