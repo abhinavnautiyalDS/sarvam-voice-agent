@@ -61,6 +61,27 @@ export default function KnowledgeBase() {
   const activeDoc = documents.find(d => d.id === selected);
   return <section className="panel page-panel">
     <div className="section-head"><div><span className="eyebrow">CENTRAL KNOWLEDGE STORE</span><h3>Knowledge Base</h3><p>Browse owner-indexed documents and inspect the exact text chunks stored for retrieval.</p></div><span className="readonly">READ ONLY VIEW</span></div>
+
+    <section className="kb-process-demo">
+      <div className="kb-process-heading">
+        <div><span className="eyebrow">HOW KNOWLEDGE GETS PREPARED</span><h3>From a document to searchable intelligence</h3><p>A transparent look at the owner-managed ingestion workflow behind AURA.</p></div>
+        <span className="kb-process-badge"><Layers3/> PROCESS OVERVIEW</span>
+      </div>
+      <div className="kb-process-steps">
+        <article><span className="kb-step-no">01</span><div className="kb-step-icon"><FileText/></div><b>Document added</b><p>Owner selects a supported UTF-8 .txt or .md source file.</p><small>INPUT · SOURCE FILE</small></article>
+        <i className="kb-process-arrow">→</i>
+        <article><span className="kb-step-no">02</span><div className="kb-step-icon"><FileSearch/></div><b>Text extracted</b><p>Readable text is loaded from the source document.</p><small>PREPARE · CLEAN TEXT</small></article>
+        <i className="kb-process-arrow">→</i>
+        <article><span className="kb-step-no">03</span><div className="kb-step-icon"><Scissors/></div><b>Content chunked</b><p>Text is split into overlapping sections for focused retrieval.</p><small>SEGMENT · CHUNKS</small></article>
+        <i className="kb-process-arrow">→</i>
+        <article><span className="kb-step-no">04</span><div className="kb-step-icon"><Network/></div><b>Embeddings created</b><p>Gemini converts each chunk into a numerical vector.</p><small>VECTORIZE · GEMINI API</small></article>
+        <i className="kb-process-arrow">→</i>
+        <article><span className="kb-step-no">05</span><div className="kb-step-icon"><Database/></div><b>Index stored</b><p>Vectors go to FAISS; document text and metadata to SQLite.</p><small>INDEX · FAISS + SQLITE</small></article>
+        <i className="kb-process-arrow">→</i>
+        <article className="kb-step-ready"><span className="kb-step-no">06</span><div className="kb-step-icon"><CheckCircle2/></div><b>Ready to retrieve</b><p>AURA can find relevant chunks when KB retrieval is enabled.</p><small>AVAILABLE · ON DEMAND</small></article>
+      </div>
+      <div className="kb-process-note"><ShieldCheck/><span><b>Owner-managed process</b> — ingestion runs privately on the backend. This overview explains the workflow; it is not a live upload or processing job.</span></div>
+    </section>
     <div className="kb-live-toolbar">
       <div className="kb-live-status"><Database/><span><b>{status ? `${status.documents} documents · ${status.chunks} chunks` : 'Knowledge store'}</b><small>{status ? `${status.embedding_model} · ${status.dimensions} dimensions` : 'Waiting for backend status'}</small></span></div>
       <div className="kb-enable"><span><b>Knowledge retrieval</b><small>{status?.enabled ? 'Enabled for voice sessions' : 'Disabled by default'}</small></span><button onClick={() => void toggle()} disabled={!status || toggleBusy} title="Toggle knowledge retrieval">{toggleBusy ? <LoaderCircle className="spin"/> : status?.enabled ? <ToggleRight/> : <ToggleLeft/>}<b>{status?.enabled ? 'ON' : 'OFF'}</b></button></div>
