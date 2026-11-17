@@ -18,6 +18,7 @@ All `/api/admin/knowledge/*` routes use the existing `AURA_ADMIN_ALLOWED_IPS` al
 - `GET /api/admin/knowledge/documents` — indexed source manifest.
 - `GET /api/admin/knowledge/documents/{document_id}/chunks` — inspect chunk text and metadata.
 - `POST /api/admin/knowledge/documents` — ingest raw text or pre-chunked JSON.
+- `DELETE /api/admin/knowledge/documents/{document_id}` — remove a stale source and rebuild the index.
 - `PUT /api/admin/knowledge/enabled` — persist the KB ON/OFF state.
 - `POST /api/admin/knowledge/rebuild-index` — rebuild FAISS from durable vectors stored in SQLite.
 
@@ -35,7 +36,7 @@ Pre-chunked content is preserved as supplied:
 }
 ```
 
-Raw text can be supplied with `content` instead of `chunks`; the backend splits it into overlapping passages. Each document requires a meaningful title and source. Only upload content from authoritative, current sources.
+Raw text can be supplied with `content` instead of `chunks`; the backend splits it into overlapping passages. Each document requires a meaningful title and source. Only upload content from authoritative, current sources. Use [the verified content template](knowledge_base/content_template.md) to prepare factual material before ingestion.
 
 ## Embeddings and vector index
 
