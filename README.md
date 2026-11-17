@@ -14,6 +14,12 @@ Browser microphone → WebRTC → **Sarvam Saaras v3 realtime STT** → **fine-t
 
 The BERT-Tiny classifier runs on each finalized STT transcript and reports dominant writing script, both softmax scores, top-class score, and inference latency. Its model files are downloaded from the `script-classifier-dataset` branch of [hinglish-language-switch-llm](https://github.com/abhinavnautiyalDS/hinglish-language-switch-llm/tree/script-classifier-dataset/artifacts/script_classifier_bert_tiny/model) on first use and cached locally. `DEVANAGARI` routes the reply/TTS toward Hindi; `LATIN` routes toward English. This model classifies writing script, not natural language: Latin-script Hindi/Hinglish can be mistaken for English, so treat routing as a script-based heuristic. Every non-empty transcript still proceeds to the LLM.
 
+## Repository layout
+
+- `backend/app/` — FastAPI voice backend and knowledge-base services.
+- `frontend/` — AURA browser interface.
+- Root-level backend Python files are compatibility shims; new backend code belongs under `backend/app/`.
+
 ## Install and run
 
 Python 3.12 is recommended.
@@ -80,3 +86,7 @@ The page displays WebRTC audio flow, Saaras transcript and event, classifier pre
 ## Security
 
 Never commit `.env`, Streamlit secrets, personal call transcripts, or API keys.
+
+## AURA Knowledge Base (FastAPI backend)
+
+The owner-managed KB backend is documented in [BACKEND.md](BACKEND.md) and [knowledge_base/README.md](knowledge_base/README.md). It supports pre-chunked JSON ingestion or raw-text chunking, Gemini Embedding 2 vectors, persistent FAISS search, admin-only source management, a server-side ON/OFF switch, and selective retrieval before the voice LLM. The KB starts disabled and requires a server-side `GEMINI_API_KEY`. Do not commit source documents or runtime index files.
