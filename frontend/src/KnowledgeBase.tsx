@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, ChevronRight, Database, FileText, Layers3, LoaderCircle, Network, RefreshCw, ToggleLeft, ToggleRight } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronRight, Database, FileSearch, FileText, Layers3, LoaderCircle, Network, RefreshCw, Scissors, ShieldCheck, ToggleLeft, ToggleRight } from 'lucide-react';
 
 type KBStatus = { enabled: boolean; documents: number; chunks: number; embedding_model: string; dimensions: number };
 type Document = { id: string; title: string; source: string; created_at: string; chunk_count: number };
