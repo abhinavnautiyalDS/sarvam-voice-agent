@@ -151,10 +151,20 @@ def _snapshot(agent: CloudVoiceAgent) -> dict:
 @app.websocket("/ws/voice")
 async def voice_socket(websocket: WebSocket):
     await websocket.accept()
+    agent_type = websocket.query_params.get("agent", "general")
+    voice_ids = {
+        "general": "3fe4afbc-3bde-4c97-ab8e-37e3fb8c7ba2",
+        "customer_service": "029d327b-987b-4879-8375-454cba8424ec",
+        "tutor": "0ffd8c73-7c39-4b22-92f4-ebf33a6fae2c",
+    }
+    if agent_type not in voice_ids:
+        await websocket.send_json({"type": "error", "message": "Unknown agent selection"})
+        await websocket.close(code=1008)
+        return
     try:
         sarvam_key = _required_env("SARVAM_API_KEY")
         bakbak_key = _required_env("BAKBAK_API_KEY")
-        voice_id = _required_env("BAKBAK_VOICE_ID")
+        voice_id = voice_ids[agent_type]
     except RuntimeError as exc:
         await websocket.send_json({"type": "error", "message": str(exc)})
         await websocket.close(code=1011)
@@ -165,6 +175,7 @@ async def voice_socket(websocket: WebSocket):
         sarvam_api_key=sarvam_key,
         bakbak_api_key=bakbak_key,
         bakbak_voice_id=voice_id,
+        agent_type=agent_type,
         output_source=output,
         llm_model=get_setting("SARVAM_LLM_MODEL", "sarvam-105b-conversations"),
         tts_model=get_setting("BAKBAK_TTS_MODEL", "m1"),
@@ -177,6 +188,8 @@ async def voice_socket(websocket: WebSocket):
     agent.start()
     await websocket.send_json({
         "type": "ready",
+        "agent": agent_type,
+        "voice_id": voice_id,
         "message": "AURA voice session connected. Send mono PCM16 audio at 16000 Hz.",
         "input_sample_rate": 16000,
         "output_sample_rate": 24000,
