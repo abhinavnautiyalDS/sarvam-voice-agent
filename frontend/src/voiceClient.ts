@@ -30,7 +30,7 @@ export class AuraVoiceClient {
   private stopped = false;
   private readonly options: VoiceClientOptions;
 
-  constructor(options: VoiceClientOptions) {
+  constructor(options: VoiceClientOptions, agent: string = "general") {
     this.options = options;
   }
 
@@ -38,7 +38,9 @@ export class AuraVoiceClient {
     this.stopped = false;
     const secure = window.location.protocol === 'https:';
     const configured = import.meta.env.VITE_AURA_WS_URL as string | undefined;
-    const wsUrl = configured || `${secure ? 'wss' : 'ws'}://${window.location.host}/ws/voice`;
+    const baseUrl = configured || `${secure ? 'wss' : 'ws'}://${window.location.host}/ws/voice`;
+    const separator = baseUrl.includes("?") ? "&" : "?";
+    const wsUrl = `${baseUrl}${separator}agent=${encodeURIComponent(agent)}`;
     this.options.onStatus('Connecting to AURA backend…');
 
     this.socket = new WebSocket(wsUrl);
