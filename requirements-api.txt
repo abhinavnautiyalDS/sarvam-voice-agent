@@ -12,3 +12,6 @@ soundfile>=0.12,<1
 safetensors>=0.4
 torch>=2.2
 transformers>=4.46,<6
+
+# Persistent semantic retrieval
+faiss-cpu>=1.12,<2
