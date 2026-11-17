@@ -1,34 +1,28 @@
 # AURA backend (FastAPI + WebSocket)
 
-This backend exposes the existing `CloudVoiceAgent` pipeline to a browser client.
+The backend implementation is organized under `backend/`. The root `api.py` is retained as a compatibility entry point for the EC2 systemd command `uvicorn api:app`.
 
 ## Endpoints
 
-- `GET /api/health` — non-sensitive service health.
-- `WS /ws/voice` — bidirectional voice session.
-  - Client sends binary mono signed PCM16 audio at **16 kHz**.
-  - Server sends JSON state events and binary mono signed PCM16 TTS audio at **24 kHz**.
-  - The server loads the local 12-label BERT-Tiny checkpoint using classifier variant `4.4`.
+- `GET /api/health` — service health.
+- `WS /ws/voice` — browser audio session (PCM16 mono 16 kHz in, PCM16 mono 24 kHz out).
+- `GET /api/knowledge/status` — read-only KB status.
+- `GET /api/knowledge/documents` — read-only indexed document inventory.
+- `GET /api/knowledge/documents/{id}/chunks` — read-only chunk content.
+- `PUT /api/admin/knowledge/enabled` — owner IP-allowlisted KB retrieval switch.
 
-## Run on EC2
+## Knowledge Base
 
-Use the dedicated lightweight requirements file, not the full Streamlit/Pipecat development requirements:
+Gemini's hosted embedding API creates vectors. FAISS performs similarity search. SQLite stores document metadata, chunk text, and vectors. The KB is disabled by default. The UI exposes browsing only—no document upload, attach, or re-index controls.
+
+Set `GEMINI_API_KEY` on the server (never in frontend variables). Owner-side ingestion:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -r requirements-api.txt
-cp .env.example .env
-# Edit .env and add the Sarvam and BakBak credentials.
-.venv/bin/python -m uvicorn api:app --host 127.0.0.1 --port 8000
+.venv/bin/python -m backend.ingest_kb path/to/knowledge.md
 ```
 
-Keep port 8000 private. Put Nginx with HTTPS/WSS in front of it. Set
-`AURA_ALLOWED_ORIGINS` to the exact deployed frontend origin before public launch.
+Only UTF-8 `.txt` and `.md` files are accepted by the CLI. Data is stored in `data/knowledge_base` by default and is excluded from Git.
 
-## Important
+## EC2
 
-- API keys are read only from the backend environment.
-- The public websocket accepts audio only; it does not expose credential or model-management controls.
-- The KB is not wired into this first voice API yet. The existing UI's read-only KB view remains informational until an owner-side index and retrieval adapter are configured.
-- The React UI must connect to `/ws/voice` and send PCM16 audio; the WebSocket service does not make the existing microphone preview live automatically.
+Install dependencies with `.venv/bin/python -m pip install -r requirements-api.txt`. Keep port 8000 private behind Nginx HTTPS/WSS. Do not deploy or restart the service until the frontend build and backend smoke tests pass.
