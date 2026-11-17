@@ -40,10 +40,8 @@ MODEL_VARIANTS = {
         "path": "models/bert_tiny_e2_multilingual_version4.zip",
     },
     "4.4": {
-        "kind": "directory",
-        "repo": "abhinavnautiyalDS/Real-Time-Language-Switching-for-Voice-Agents",
-        "branch": "realtime-v4.4",
-        "path": "models/multilingual-bert-tiny-final",
+        "kind": "local",
+        "path": "models/ml/bert_tiny_e2_multilingual4.4",
     },
 }
 DEFAULT_VARIANT = os.getenv("LANGUAGE_CLASSIFIER_VARIANT", "4.3")
@@ -72,7 +70,11 @@ def _download(url: str, target: Path) -> None:
 def _ensure_model_files(variant: str) -> Path:
     spec = MODEL_VARIANTS[variant]
     model_cache = CACHE_ROOT / variant.lower().replace(" ", "_")
-    if spec["kind"] == "directory":
+    if spec["kind"] == "local":
+        model_cache = Path(__file__).resolve().parent / spec["path"]
+        if not model_cache.is_dir():
+            raise FileNotFoundError(f"Local model directory not found: {model_cache}")
+    elif spec["kind"] == "directory":
         model_cache.mkdir(parents=True, exist_ok=True)
         base_url = f"https://raw.githubusercontent.com/{spec['repo']}/{spec['branch']}/{spec['path']}"
         optional_files = ("tokenizer_config.json", "special_tokens_map.json", "vocab.txt")
