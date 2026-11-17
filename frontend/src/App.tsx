@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AuraVoiceClient, type AuraVoiceState } from './voiceClient';
+import { AuraVoiceClient, type AuraVoiceState } from './voiceClient';\nimport AdminPage from './AdminPage';
 import { Activity, AudioLines, BarChart3, BrainCircuit, Check, ChevronDown, ChevronRight, Clock3, Cpu, Database, FileText, Globe2, History, Layers3, Mic, Network, Pause, Play, Radio, Search, Settings, ShieldCheck, Sparkles, Square, Volume2, Workflow } from 'lucide-react';
 
 type Tab='playground'|'knowledge'|'pipeline'|'evaluation'|'settings';
@@ -19,7 +19,7 @@ const stages=[
 {n:'05',name:'LLM reasoning',sub:'Sarvam Gamma',detail:'Responds from model knowledge, with retrieved context only when needed.',icon:Cpu,color:'blue'},
 {n:'06',name:'Speech generation',sub:'BakBak Raya TTS',detail:'Converts the final response into speech.',icon:Volume2,color:'violet'}
 ];
-export default function App(){
+export default function App(){\n if(window.location.pathname === '/admin' || window.location.pathname === '/admin/') return <AdminPage/>;
  const [tab,setTab]=useState<Tab>('playground'),[turns,setTurns]=useState(seed),[selected,setSelected]=useState(5),[query,setQuery]=useState(''),[search,setSearch]=useState(''),[expanded,setExpanded]=useState(5),[listening,setListening]=useState(false),[stage,setStage]=useState(3),[showHistory,setShowHistory]=useState(true);
  const [voiceStatus,setVoiceStatus]=useState('Backend connection not started'),[voiceData,setVoiceData]=useState<AuraVoiceState>({});
  const voiceClient=useRef<AuraVoiceClient|null>(null);
