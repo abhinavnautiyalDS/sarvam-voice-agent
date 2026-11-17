@@ -472,7 +472,7 @@ class CloudVoiceAgent:
 
     @staticmethod
     def _requires_verified_kb(text: str) -> bool:
-        pattern = r"\\b(fee|fees|tuition|scholarship|admission|application|eligib|programme|program|course|curriculum|placement|salary|outcome|deadline|last date|cut.?off|campus|hostel|university|college|accreditation|faculty|batch|intake|seat|duration)\\b"
+        pattern = r"\b(fee|fees|tuition|scholarship|admission|application|eligib|programme|program|course|curriculum|placement|salary|outcome|deadline|last date|cut.?off|campus|hostel|university|college|accreditation|faculty|batch|intake|seat|duration)\b"
         return bool(re.search(pattern, text, flags=re.IGNORECASE))
 
     async def _retrieve_kb(self, user_text: str) -> list[dict]:
@@ -497,9 +497,9 @@ class CloudVoiceAgent:
         for index, hit in enumerate(hits, 1):
             passages.append(
                 f"[Source {index}: {hit.get('title')} | {hit.get('source')} | "
-                f"category={hit.get('category')} | similarity={hit.get('score')} ]\\n{hit.get('text')}"
+                f"category={hit.get('category')} | similarity={hit.get('score')} ]\n{hit.get('text')}"
             )
-        return "VERIFIED KNOWLEDGE-BASE PASSAGES (use only what is supported; do not infer missing facts):\\n" + "\\n\\n".join(passages)
+        return "VERIFIED KNOWLEDGE-BASE PASSAGES (use only what is supported; do not infer missing facts):\n" + "\n\n".join(passages)
 
     async def _get_llm_response(
         self, user_text: str, detected_language: str = "unknown", classifier_result: dict | None = None,
@@ -572,6 +572,8 @@ class CloudVoiceAgent:
         )
         kb_enabled = bool(self.knowledge_base and self.knowledge_base.settings().get("enabled"))
         mandatory_kb = self._requires_verified_kb(user_text)
+        if mandatory_kb and not kb_enabled:
+            kb_context = "KNOWLEDGE BASE IS OFF. Do not answer organisation-specific facts from model memory. Briefly say verified information is unavailable and offer a counsellor."
         if kb_enabled and not kb_context and mandatory_kb:
             kb_context = self._format_kb_context(await self._retrieve_kb(user_text))
             if not kb_context:
@@ -581,10 +583,10 @@ class CloudVoiceAgent:
                     "or guess. Briefly say verified information is not available and offer a counsellor."
                 )
         if kb_context:
-            prompt_context += "\\n\\n" + kb_context
+            prompt_context += "\n\n" + kb_context
         elif kb_enabled and allow_kb_fallback and not mandatory_kb:
             prompt_context += (
-                "\\nIf you cannot answer the caller's general question confidently from ordinary "
+                "\nIf you cannot answer the caller's general question confidently from ordinary "
                 "knowledge and conversation context, return exactly [AURA_KB_REQUIRED] and nothing else. "
                 "Do not use this marker for organisation-specific facts; those require verified retrieval."
             )
