@@ -147,6 +147,14 @@ async def admin_knowledge_add_document(request: Request):
         raise HTTPException(status_code=502, detail=f"Knowledge ingestion failed: {type(exc).__name__}: {exc}")
 
 
+@app.delete("/api/admin/knowledge/documents/{document_id}")
+async def admin_knowledge_delete_document(document_id: str, request: Request):
+    _require_admin_ip(request)
+    if not knowledge_base.delete_document(document_id):
+        raise HTTPException(status_code=404, detail="Knowledge document not found")
+    return {"status": "deleted", "document_id": document_id}
+
+
 @app.put("/api/admin/knowledge/enabled")
 async def admin_knowledge_toggle(request: Request):
     _require_admin_ip(request)
