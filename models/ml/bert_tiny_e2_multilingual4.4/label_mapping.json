@@ -1,0 +1,30 @@
+{
+  "label2id": {
+    "as-IN": 0,
+    "bn-IN": 1,
+    "en-IN": 2,
+    "gu-IN": 3,
+    "hi-IN": 4,
+    "kn-IN": 5,
+    "ml-IN": 6,
+    "mr-IN": 7,
+    "pa-IN": 8,
+    "ta-IN": 9,
+    "te-IN": 10,
+    "none": 11
+  },
+  "id2label": {
+    "0": "as-IN",
+    "1": "bn-IN",
+    "2": "en-IN",
+    "3": "gu-IN",
+    "4": "hi-IN",
+    "5": "kn-IN",
+    "6": "ml-IN",
+    "7": "mr-IN",
+    "8": "pa-IN",
+    "9": "ta-IN",
+    "10": "te-IN",
+    "11": "none"
+  }
+}
