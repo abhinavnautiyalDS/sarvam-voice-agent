@@ -41,6 +41,14 @@ def _required_env(name: str) -> str:
     return value
 
 
+def _require_admin_ip(request: Request) -> None:
+    allowed = {item.strip() for item in os.getenv("AURA_ADMIN_ALLOWED_IPS", "").split(",") if item.strip()}
+    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    client_ip = forwarded or (request.client.host if request.client else "")
+    if not allowed or client_ip not in allowed:
+        raise HTTPException(status_code=403, detail="Admin access is not enabled for this IP. Configure AURA_ADMIN_ALLOWED_IPS on the server.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
