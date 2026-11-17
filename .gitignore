@@ -5,3 +5,6 @@ __pycache__/
 *.wav
 .streamlit/
 models/language_classifier.joblib
+
+# Runtime knowledge-base data (SQLite + FAISS)
+data/knowledge_base/
