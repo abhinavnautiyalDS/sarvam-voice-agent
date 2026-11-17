@@ -43,7 +43,7 @@ export default function App(){
   const addTurn=()=>{
     const value=query.trim(); if(!value)return;
     const id=Math.max(...turns.map(t=>t.id))+1;
-    const detected=/[\\u0900-\\u097F]/.test(value)?'hi-IN · Hindi':'en-IN · English';
+    const detected=/[\u0900-\u097F]/.test(value)?'hi-IN · Hindi':'en-IN · English';
     const answer='This is a UI preview response. Connect the AURA backend to run live STT, classifier inference, knowledge retrieval, LLM generation and TTS for this turn.';
     const next={id,user:value,language:detected,confidence:'—',answer,summary:'User submitted a new message in the playground.',time:new Date().toLocaleTimeString()};
     setTurns([next,...turns]);setSelected(id);setExpanded(id);setQuery('');
