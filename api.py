@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from cloud_voice import CloudVoiceAgent\nfrom admin_config import get_setting, public_config, save_config
+from cloud_voice import CloudVoiceAgent
+from admin_config import get_setting, public_config, save_config
 
 load_dotenv()
 
@@ -53,18 +54,38 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if "*" in allowed_origins else allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET"],
+    allow_methods=["GET", "PUT"],
     allow_headers=["*"],
 )
 
 
-@app.get("/api/admin/config")\nasync def admin_get_config(request: Request):\n    _require_admin_ip(request)\n    return public_config()\n\n\n@app.put("/api/admin/config")\nasync def admin_update_config(request: Request):\n    _require_admin_ip(request)\n    body = await request.json()\n    if not isinstance(body, dict):\n        raise HTTPException(status_code=400, detail="Expected a JSON object")\n    allowed = {"SARVAM_API_KEY", "BAKBAK_API_KEY", "BAKBAK_VOICE_ID", "SARVAM_LLM_MODEL", "BAKBAK_TTS_MODEL", "SARVAM_STT_MODE", "AURA_LLM_PROVIDER", "AURA_TTS_PROVIDER"}\n    updates = {key: value.strip() for key, value in body.items() if key in allowed and isinstance(value, str)}\n    if not updates:\n        raise HTTPException(status_code=400, detail="No supported settings supplied")\n    save_config(updates)\n    return {"status": "saved", "config": public_config(), "note": "New voice sessions will use the updated settings."}\n\n\n@app.get("/api/health")
+@app.get("/api/admin/config")
+async def admin_get_config(request: Request):
+    _require_admin_ip(request)
+    return public_config()
+
+
+@app.put("/api/admin/config")
+async def admin_update_config(request: Request):
+    _require_admin_ip(request)
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Expected a JSON object")
+    allowed = {"SARVAM_API_KEY", "BAKBAK_API_KEY", "BAKBAK_VOICE_ID", "SARVAM_LLM_MODEL", "BAKBAK_TTS_MODEL", "SARVAM_STT_MODE", "AURA_LLM_PROVIDER", "AURA_TTS_PROVIDER"}
+    updates = {key: value.strip() for key, value in body.items() if key in allowed and isinstance(value, str)}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No supported settings supplied")
+    save_config(updates)
+    return {"status": "saved", "config": public_config(), "note": "New voice sessions will use the updated settings."}
+
+
+@app.get("/api/health")
 async def health():
     return {
         "status": "ok",
         "service": "aura-voice-api",
         "classifier": "local multilingual BERT-Tiny (12 labels)",
-        "stt_mode": os.getenv("SARVAM_STT_MODE", "verbose"),
+        "stt_mode": get_setting("SARVAM_STT_MODE", "verbose"),
     }
 
 
