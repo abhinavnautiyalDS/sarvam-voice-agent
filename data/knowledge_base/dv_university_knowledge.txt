@@ -1,0 +1,107 @@
+DV UNIVERSITY — COURSE COUNSELLING KNOWLEDGE BASE
+Reference profile: University of Delhi (DU)
+Knowledge type: Demonstration/reference content for the fictional DV University persona
+Last reviewed: 17 November 2026
+
+IMPORTANT IDENTITY AND ACCURACY NOTICE
+DV University is the fictional/demo institution used by this AURA voice-agent project. This document uses publicly available University of Delhi information as a reference model because the user described DV University as a replica. Do not state or imply that DV University is the University of Delhi, is affiliated with DU, is accredited by DU, or has identical courses, fees, admissions, campuses, faculty, or policies. Do not claim official affiliation. When speaking to a caller, say these are DV University's demo/reference catalogue details and that exact DV University operational details must be confirmed by its admissions office.
+
+1. UNIVERSITY REFERENCE PROFILE
+The University of Delhi (DU) is a public central university in Delhi, India. Its official website reports 16 faculties, 86 departments and 91 colleges (website accessed 17 November 2026).
+Official website: https://www.du.ac.in/
+Official admissions portal: https://admission.uod.ac.in/
+Official School of Open Learning (SOL): https://sol.du.ac.in/
+
+2. PROGRAMME CATALOGUE — REFERENCE ONLY
+The DU School of Open Learning 2026–27 admissions website lists the following undergraduate programmes:
+- B.Sc. (Hons.) Computer Science
+- Bachelor of Management Studies (BMS)
+- Bachelor of Business Administration (Financial Investment Analysis) — BBA (FIA)
+- B.A. (Hons.) English
+- B.A. (Hons.) Political Science
+- B.A. (Hons.) Economics
+- B.Com. (Hons.)
+- B.Com.
+- B.A. Programme with Computer Applications
+- B.A. Programme with Economics
+- B.A. Programme with Education
+- B.A. Programme with English
+- B.A. Programme with Hindi
+- B.A. Programme with History
+- B.A. Programme with Mathematics
+- B.A. Programme with Political Science
+- B.A. Programme with Sanskrit
+- B.A. Programme with Urdu
+
+The same DU SOL 2026–27 page lists postgraduate programmes including:
+- M.A. Hindi (one-year and two-year programme options shown)
+- M.A. Sanskrit (one-year and two-year programme options shown)
+- M.A. History (one-year and two-year programme options shown)
+- M.A. Political Science (one-year and two-year programme options shown)
+- M.Com. (one-year and two-year programme options shown)
+- MBA
+- MBA (Executive) Healthcare Administration
+- Bachelor of Library and Information Science (BLISc)
+- Master of Library and Information Science (MLISc)
+- Post Graduate Diploma in Automated and Digital Library Management (PGDADLM)
+
+The SOL page also lists job-ready skill/certificate courses, including Certificate Course in English Language (Online), Media Studies and Journalism, Basics of Robotics, Lab Technology and Lab Management, Library and Information Science, Advanced Accounting and Financial Management, and Basics of Accounting and GST. This list is not necessarily exhaustive and can change by admission cycle.
+
+Important scope: These are SOL catalogue examples from the official DU SOL site, not a complete catalogue of every DU regular college, department, faculty, or programme. Do not present them as DV University's confirmed live offerings unless the demo owner approves that mapping.
+
+3. FEES AND PRICE QUESTIONS
+No verified DV University fee schedule or per-session pricing has been supplied. Therefore:
+- Do not invent DV University course prices, tuition, registration fees, examination charges, instalments, scholarships, discounts, taxes, or session/class prices.
+- Do not convert a DU fee into a DV University fee.
+- DU fees differ by programme, college, mode, category, academic year and fee components.
+- The DU SOL official 2025–26 UG fee PDF lists a total of ₹10,120 for the first-year B.A. Programme/B.Com. group under Category A (UR/OBC/SC/ST), with individual components including tuition, welfare, development, facilities and examination fees. This is a historical 2025–26 example only, NOT a current 2026–27 fee and NOT a DV University price. Do not quote it as a current payable amount.
+- DU's 2025–26 college UG bulletin shows course-wise totals that vary by programme (for example, listed B.A. and B.Com. combinations around ₹32,100–₹34,600, and some science honours courses ₹37,100). This is college-specific historical information and must not be treated as a general DU or DV fee.
+- No official per-session/class counselling or teaching price is established by these sources. If asked, explain that no verified per-session rate is available in this knowledge base and direct the caller to DV University's admissions/fees office.
+
+For any fee enquiry, ask which programme, academic year, study mode, college/campus and applicant category are relevant. Then provide a figure only if an approved current DV University fee schedule is available. Otherwise clearly say that the amount needs confirmation.
+
+4. ADMISSIONS AND ELIGIBILITY
+DU admissions information is published through the official admissions portal and programme-specific bulletins. Requirements differ across UG, PG, SOL, professional and certificate programmes.
+- Do not claim one universal admission route or eligibility rule.
+- Do not promise admission, a seat, scholarship, placement, or eligibility.
+- Direct callers to the current programme-specific bulletin and official admissions portal for the applicable cycle.
+- For PG, the official DU 2026–27 notice describes one-year and two-year master's programme routes under the applicable NEP framework; eligibility and allocation depend on programme-specific criteria. This is DU reference information only, not a confirmed DV University policy.
+
+5. COURSE COUNSELLING CONVERSATION GUIDE
+When a prospective student calls:
+1. Greet them and ask what subject or career area they are interested in.
+2. Ask whether they are looking for undergraduate, postgraduate, distance/open-learning, or certificate/skill programmes.
+3. Ask about their current qualification and preferred study mode.
+4. Suggest only programmes that appear in the approved DV University catalogue. If only this DU reference catalogue is available, clearly label suggestions as demo/reference examples.
+5. Explain course structure, duration, eligibility and fees only when supported by approved current DV University information.
+6. If a fee, session rate, schedule, deadline, placement claim or policy is missing, say it is not confirmed and offer the admissions office as the next step.
+7. Keep answers concise, natural and conversational. Match English, Hindi or Hinglish used by the caller.
+
+6. COMMON QUESTIONS — SAFE ANSWERS
+Q: Is DV University the same as Delhi University?
+A: No. DV University is the demo institution in this voice-agent project. Its sample catalogue is modelled using publicly available Delhi University reference information. Do not claim official affiliation.
+
+Q: Which courses are available?
+A: The reference catalogue includes BA, BCom, BSc, BMS, BBA (FIA), selected MA/MCom programmes, MBA, library science and certificate/skill courses. Confirm the actual DV University offering before presenting any programme as currently available.
+
+Q: What is the course fee?
+A: Fees depend on the exact programme, mode, academic year and applicable fee category. This knowledge base does not contain an approved current DV University fee schedule, so the counsellor must not quote an amount.
+
+Q: What is the price per session?
+A: A verified DV University per-session price is not available in this knowledge base. Please confirm with the admissions office.
+
+Q: Can you guarantee admission or placement?
+A: No. The counsellor must never guarantee admission, a seat, employment, placement or a scholarship.
+
+Q: Where can I verify Delhi University reference information?
+A: Use https://www.du.ac.in/, https://admission.uod.ac.in/ and https://sol.du.ac.in/.
+
+7. SOURCE REGISTER
+- University of Delhi official website, institutional overview (accessed 17 Nov 2026): https://www.du.ac.in/
+- DU SOL official admissions and programme list, 2026–27 (accessed 17 Nov 2026): https://sol.du.ac.in/index.php/admission22/admission22/fee_structure.html
+- DU SOL UG Fee Structure 2025–26 PDF (historical fee example): https://sol.du.ac.in/admission_23_24/assets/2025/Fee%20Structure/UG%20Fee%20Structure%202025-26.pdf
+- University of Delhi college UG Information Bulletin 2025–26 (historical college-specific fee examples): https://dr.du.ac.in/sites/default/files/2025-07/Information_Bulletin_25-26_DRC-compressed.pdf
+- DU official admissions portal: https://admission.uod.ac.in/
+
+MAINTENANCE
+Review the official source pages and replace historical fee information only when a current official fee schedule is available. Keep DU source facts clearly separated from DV University demo policies. Never fabricate missing prices, session rates, course availability or admission rules.
