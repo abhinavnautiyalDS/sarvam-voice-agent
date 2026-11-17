@@ -642,7 +642,7 @@ class CloudVoiceAgent:
             ).strip()
             if not answer:
                 raise RuntimeError("Gemma returned an empty text response.")
-            if answer.strip() == "[AURA_KB_REQUIRED]" and allow_kb_fallback and kb_enabled:
+            if "[AURA_KB_REQUIRED]" in answer and allow_kb_fallback and kb_enabled:
                 hits = await self._retrieve_kb(user_text)
                 context = self._format_kb_context(hits)
                 if context:
@@ -668,7 +668,7 @@ class CloudVoiceAgent:
             data = response.json()
         self.llm_latency_ms = round((time.perf_counter() - started) * 1000, 1)
         content = (data.get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip()
-        if content == "[AURA_KB_REQUIRED]" and allow_kb_fallback and kb_enabled:
+        if "[AURA_KB_REQUIRED]" in content and allow_kb_fallback and kb_enabled:
             hits = await self._retrieve_kb(user_text)
             context = self._format_kb_context(hits)
             if context:
