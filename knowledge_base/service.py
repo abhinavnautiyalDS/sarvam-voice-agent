@@ -44,7 +44,7 @@ class GeminiEmbedder:
         vectors: list[list[float]] = []
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:batchEmbedContents"
         headers = {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
-        prefix = "task: search_document | query: " if task == "document" else "task: search_query | query: "
+        prefix = "task: search_document | text: " if task == "document" else "task: search_query | query: "
         async with httpx.AsyncClient(timeout=60) as client:
             for offset in range(0, len(texts), 64):
                 batch = texts[offset:offset + 64]
