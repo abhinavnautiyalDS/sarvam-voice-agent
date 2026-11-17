@@ -24,6 +24,7 @@ class CloudVoiceAgent:
         sarvam_api_key: str,
         bakbak_api_key: str,
         bakbak_voice_id: str,
+        agent_type: str = "general",
         output_source=None,
         llm_model: str = "sarvam-105b-conversations",
         gemma_api_key: str | None = None,
@@ -37,6 +38,7 @@ class CloudVoiceAgent:
         self.sarvam_api_key = sarvam_api_key
         self.bakbak_api_key = bakbak_api_key
         self.bakbak_voice_id = bakbak_voice_id
+        self.agent_type = agent_type
         self.output_source = output_source
         self.llm_model = llm_model
         self.gemma_api_key = gemma_api_key
@@ -476,7 +478,7 @@ class CloudVoiceAgent:
             "api-subscription-key": self.sarvam_api_key,
             "Content-Type": "application/json",
         }
-        system_prompt = get_system_prompt()
+        system_prompt = get_system_prompt(self.agent_type)
         classifier_result = classifier_result or {}
         classifier_label = str(classifier_result.get("label", "none")) if classifier_result.get("available") else "none"
         classifier_confidence_value = classifier_result.get("confidence")
