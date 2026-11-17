@@ -1,5 +1,18 @@
 # AURA backend (FastAPI + WebSocket)
 
+The backend implementation is organized under `backend/app/`:
+
+- `main.py` — FastAPI routes and WebSocket entrypoint
+- `cloud_voice.py` — voice session orchestration
+- `knowledge_base/` — ingestion, embeddings and FAISS retrieval
+- `script_classifier.py` — multilingual language/script classifier
+- `admin_config.py` — runtime admin configuration
+- `system_prompt.py` and `system_prompt.txt` — voice-agent policy
+
+Root-level Python modules are thin compatibility shims for older imports and the existing EC2 command `uvicorn api:app`. New development should target `backend/app/`.
+
+# AURA backend (FastAPI + WebSocket)
+
 AURA exposes the voice pipeline and an owner-managed knowledge base. Keep the API on loopback behind Nginx/HTTPS/WSS; never expose port 8000 directly.
 
 ## Voice endpoints
