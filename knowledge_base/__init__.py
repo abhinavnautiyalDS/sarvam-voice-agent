@@ -1,1 +1,1 @@
-"""AURA knowledge-base ingestion and retrieval package."""
+"""Compatibility package; implementation lives in backend/app/knowledge_base."""
