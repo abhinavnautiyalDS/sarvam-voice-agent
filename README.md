@@ -14,6 +14,12 @@ Browser microphone → WebRTC → **Sarvam Saaras v3 realtime STT** → **fine-t
 
 The BERT-Tiny classifier runs on each finalized STT transcript and reports dominant writing script, both softmax scores, top-class score, and inference latency. Its model files are downloaded from the `script-classifier-dataset` branch of [hinglish-language-switch-llm](https://github.com/abhinavnautiyalDS/hinglish-language-switch-llm/tree/script-classifier-dataset/artifacts/script_classifier_bert_tiny/model) on first use and cached locally. `DEVANAGARI` routes the reply/TTS toward Hindi; `LATIN` routes toward English. This model classifies writing script, not natural language: Latin-script Hindi/Hinglish can be mistaken for English, so treat routing as a script-based heuristic. Every non-empty transcript still proceeds to the LLM.
 
+## Repository layout
+
+- `backend/app/` — FastAPI voice backend and knowledge-base services.
+- `frontend/` — AURA browser interface.
+- Root-level backend Python files are compatibility shims; new backend code belongs under `backend/app/`.
+
 ## Install and run
 
 Python 3.12 is recommended.
