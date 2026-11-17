@@ -7,10 +7,10 @@ import time
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from cloud_voice import CloudVoiceAgent
+from cloud_voice import CloudVoiceAgent\nfrom admin_config import get_setting, public_config, save_config
 
 load_dotenv()
 
@@ -34,7 +34,7 @@ class QueueAudioSource:
 
 
 def _required_env(name: str) -> str:
-    value = os.getenv(name, "").strip()
+    value = get_setting(name, "")
     if not value:
         raise RuntimeError(f"Missing required environment variable: {name}")
     return value
@@ -58,7 +58,7 @@ app.add_middleware(
 )
 
 
-@app.get("/api/health")
+@app.get("/api/admin/config")\nasync def admin_get_config(request: Request):\n    _require_admin_ip(request)\n    return public_config()\n\n\n@app.put("/api/admin/config")\nasync def admin_update_config(request: Request):\n    _require_admin_ip(request)\n    body = await request.json()\n    if not isinstance(body, dict):\n        raise HTTPException(status_code=400, detail="Expected a JSON object")\n    allowed = {"SARVAM_API_KEY", "BAKBAK_API_KEY", "BAKBAK_VOICE_ID", "SARVAM_LLM_MODEL", "BAKBAK_TTS_MODEL", "SARVAM_STT_MODE", "AURA_LLM_PROVIDER", "AURA_TTS_PROVIDER"}\n    updates = {key: value.strip() for key, value in body.items() if key in allowed and isinstance(value, str)}\n    if not updates:\n        raise HTTPException(status_code=400, detail="No supported settings supplied")\n    save_config(updates)\n    return {"status": "saved", "config": public_config(), "note": "New voice sessions will use the updated settings."}\n\n\n@app.get("/api/health")
 async def health():
     return {
         "status": "ok",
@@ -109,8 +109,8 @@ async def voice_socket(websocket: WebSocket):
         bakbak_api_key=bakbak_key,
         bakbak_voice_id=voice_id,
         output_source=output,
-        llm_model=os.getenv("SARVAM_LLM_MODEL", "sarvam-105b-conversations"),
-        tts_model=os.getenv("BAKBAK_TTS_MODEL", "m1"),
+        llm_model=get_setting("SARVAM_LLM_MODEL", "sarvam-105b-conversations"),
+        tts_model=get_setting("BAKBAK_TTS_MODEL", "m1"),
         classifier_enabled=True,
         classifier_backend="bert_tiny",
         classifier_model_variant="4.4",
