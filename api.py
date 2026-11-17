@@ -12,8 +12,20 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from cloud_voice import CloudVoiceAgent
 from admin_config import get_setting, public_config, save_config
+from knowledge_base.service import GeminiEmbedder, KnowledgeBase, KnowledgeBaseError, DEFAULT_MODEL, DEFAULT_DIMENSIONS
 
 load_dotenv()
+
+KB_DATA_DIR = os.getenv('AURA_KB_DATA_DIR', './data/knowledge_base')
+knowledge_base = KnowledgeBase(KB_DATA_DIR)
+
+
+def _kb_embedder() -> GeminiEmbedder:
+    return GeminiEmbedder(
+        api_key=os.getenv('GEMINI_API_KEY', ''),
+        model=os.getenv('AURA_KB_EMBEDDING_MODEL', DEFAULT_MODEL),
+        dimensions=int(os.getenv('AURA_KB_EMBEDDING_DIMENSIONS', str(DEFAULT_DIMENSIONS))),
+    )
 
 
 class QueueAudioSource:
@@ -86,6 +98,70 @@ async def admin_update_config(request: Request):
     save_config(updates)
     return {"status": "saved", "config": public_config(), "note": "New voice sessions will use the updated settings."}
 
+
+
+@app.get("/api/admin/knowledge/status")
+async def admin_knowledge_status(request: Request):
+    _require_admin_ip(request)
+    return knowledge_base.status()
+
+
+@app.get("/api/admin/knowledge/documents")
+async def admin_knowledge_documents(request: Request):
+    _require_admin_ip(request)
+    return {"documents": knowledge_base.list_documents()}
+
+
+@app.get("/api/admin/knowledge/documents/{document_id}/chunks")
+async def admin_knowledge_chunks(document_id: str, request: Request, limit: int = 100):
+    _require_admin_ip(request)
+    return {"chunks": knowledge_base.list_chunks(document_id, limit=limit)}
+
+
+@app.post("/api/admin/knowledge/documents")
+async def admin_knowledge_add_document(request: Request):
+    _require_admin_ip(request)
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Expected a JSON object")
+    title = body.get("title")
+    source = body.get("source")
+    chunks = body.get("chunks")
+    content = body.get("content")
+    if not isinstance(title, str) or not title.strip() or not isinstance(source, str) or not source.strip():
+        raise HTTPException(status_code=400, detail="title and source are required")
+    if chunks is not None and (not isinstance(chunks, list) or any(not isinstance(item, dict) or not isinstance(item.get("text"), str) for item in chunks)):
+        raise HTTPException(status_code=400, detail="chunks must be an array of {text, metadata} objects")
+    if chunks is None and not isinstance(content, str):
+        raise HTTPException(status_code=400, detail="Provide content or pre-chunked chunks")
+    try:
+        result = await knowledge_base.add_document(
+            title=title, source=source, category=str(body.get("category", "general")),
+            content=content, chunks=chunks, metadata=body.get("metadata") if isinstance(body.get("metadata"), dict) else {},
+            embedder=_kb_embedder(),
+        )
+        return result
+    except KnowledgeBaseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Knowledge ingestion failed: {type(exc).__name__}: {exc}")
+
+
+@app.put("/api/admin/knowledge/enabled")
+async def admin_knowledge_toggle(request: Request):
+    _require_admin_ip(request)
+    body = await request.json()
+    if not isinstance(body, dict) or not isinstance(body.get("enabled"), bool):
+        raise HTTPException(status_code=400, detail="Expected {enabled: boolean}")
+    return knowledge_base.set_enabled(body["enabled"])
+
+
+@app.post("/api/admin/knowledge/rebuild-index")
+async def admin_knowledge_rebuild(request: Request):
+    _require_admin_ip(request)
+    with knowledge_base.lock:
+        knowledge_base._rebuild_index()
+    return {"status": "rebuilt", **knowledge_base.status()}
 
 @app.get("/api/health")
 async def health():
