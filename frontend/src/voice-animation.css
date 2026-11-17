@@ -1,8 +1,7 @@
 /* Voice orb reacts to live microphone amplitude from the active session. */
-.voice-stage{--voice-level:0;position:relative}
-.voice-stage .voice-core{transform:scale(calc(1 + var(--voice-level)*.22));transition:transform 70ms linear;box-shadow:0 0 calc(24px + var(--voice-level)*42px) rgba(71,220,255,calc(.16 + var(--voice-level)*.3))}
-.voice-stage.active .voice-ring.vr1{transform:scale(calc(1 + var(--voice-level)*.24));opacity:calc(.45 + var(--voice-level)*.5)}
-.voice-stage.active .voice-ring.vr2{transform:scale(calc(1 + var(--voice-level)*.36));opacity:calc(.2 + var(--voice-level)*.42)}
-.voice-stage.active .voice-core svg{transform:scale(calc(1 + var(--voice-level)*.12))}
+.voice-stage{--voice-scale:1;--voice-glow:.16;--voice-ring-one:1;--voice-ring-two:1}
+.voice-stage .voice-core{transform:scale(var(--voice-scale));transition:transform 70ms linear;box-shadow:0 0 30px rgba(71,220,255,var(--voice-glow))}
+.voice-stage.active .voice-ring.vr1{transform:scale(var(--voice-ring-one));opacity:.75}
+.voice-stage.active .voice-ring.vr2{transform:scale(var(--voice-ring-two));opacity:.45}
 .voice-stage .voice-core svg{transition:transform 70ms linear}
 @media(prefers-reduced-motion:reduce){.voice-stage .voice-core,.voice-stage .voice-ring,.voice-stage .voice-core svg{transition:none}}
