@@ -7,7 +7,6 @@ import threading
 import time
 import urllib.parse
 
-import av
 import httpx
 import numpy as np
 import websockets
@@ -62,7 +61,7 @@ class CloudVoiceAgent:
         self.audio_in = queue.Queue(maxsize=100)
         self.running = False
         self.thread = None
-        self._input_resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
+        self._input_resampler = None
 
         self.pipeline_status = "Not started"
         self.stt_status = "Not started"
@@ -647,8 +646,11 @@ class CloudVoiceAgent:
         self.output_source.push(pcm16_24k)
         self.output_bytes_pushed += len(pcm16_24k)
 
-    def ingest_webrtc_frame(self, frame: av.AudioFrame):
+    def ingest_webrtc_frame(self, frame):
         """Convert browser audio to mono 16 kHz signed PCM for Saaras."""
+        import av
+        if self._input_resampler is None:
+            self._input_resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
         self.audio_frames_received += 1
         for converted in self._input_resampler.resample(frame):
             pcm = converted.to_ndarray().astype(np.int16).tobytes()
