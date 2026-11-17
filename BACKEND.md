@@ -49,7 +49,7 @@ Pre-chunked content is preserved as supplied:
 }
 ```
 
-Raw text can be supplied with `content` instead of `chunks`; the backend splits it into overlapping passages. Each document requires a meaningful title and source. Only upload content from authoritative, current sources. Use [the verified content template](knowledge_base/content_template.md) to prepare factual material before ingestion.
+Raw text can be supplied with `content` instead of `chunks`; the backend splits it into overlapping passages. Each document requires a meaningful title and source. Only upload content from authoritative, current sources. Use [the verified content template](backend/app/knowledge_base/content_template.md) to prepare factual material before ingestion.
 
 ## Embeddings and vector index
 
