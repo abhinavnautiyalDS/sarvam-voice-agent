@@ -80,3 +80,7 @@ The page displays WebRTC audio flow, Saaras transcript and event, classifier pre
 ## Security
 
 Never commit `.env`, Streamlit secrets, personal call transcripts, or API keys.
+
+## AURA Knowledge Base (FastAPI backend)
+
+The owner-managed KB backend is documented in [BACKEND.md](BACKEND.md) and [knowledge_base/README.md](knowledge_base/README.md). It supports pre-chunked JSON ingestion or raw-text chunking, Gemini Embedding 2 vectors, persistent FAISS search, admin-only source management, a server-side ON/OFF switch, and selective retrieval before the voice LLM. The KB starts disabled and requires a server-side `GEMINI_API_KEY`. Do not commit source documents or runtime index files.
