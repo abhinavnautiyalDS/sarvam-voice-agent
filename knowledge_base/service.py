@@ -40,24 +40,35 @@ class GeminiEmbedder:
         self.dimensions = dimensions
 
     async def embed(self, texts: list[str], task: str) -> np.ndarray:
-        """Embed each passage separately so every input retains its own vector."""
+        """Embed independent passages in bounded synchronous API batches."""
         vectors: list[list[float]] = []
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:embedContent"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:batchEmbedContents"
         headers = {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
-        async with httpx.AsyncClient(timeout=45) as client:
-            for text in texts:
-                prefix = "task: search_document\n" if task == "document" else "task: search_query\n"
+        prefix = "task: search_document | query: " if task == "document" else "task: search_query | query: "
+        async with httpx.AsyncClient(timeout=60) as client:
+            for offset in range(0, len(texts), 64):
+                batch = texts[offset:offset + 64]
                 payload = {
-                    "content": {"parts": [{"text": prefix + text}]},
-                    "outputDimensionality": self.dimensions,
+                    "requests": [
+                        {
+                            "model": f"models/{self.model}",
+                            "content": {"parts": [{"text": prefix + text}]},
+                            "outputDimensionality": self.dimensions,
+                        }
+                        for text in batch
+                    ]
                 }
                 response = await client.post(url, headers=headers, json=payload)
                 response.raise_for_status()
                 data = response.json()
-                values = data.get("embedding", {}).get("values")
-                if not isinstance(values, list) or len(values) != self.dimensions:
-                    raise KnowledgeBaseError("Embedding API returned an unexpected vector shape")
-                vectors.append(values)
+                embeddings = data.get("embeddings", [])
+                if len(embeddings) != len(batch):
+                    raise KnowledgeBaseError("Embedding API returned an unexpected batch size")
+                for item in embeddings:
+                    values = item.get("values")
+                    if not isinstance(values, list) or len(values) != self.dimensions:
+                        raise KnowledgeBaseError("Embedding API returned an unexpected vector shape")
+                    vectors.append(values)
         matrix = np.asarray(vectors, dtype=np.float32)
         faiss.normalize_L2(matrix)
         return matrix
