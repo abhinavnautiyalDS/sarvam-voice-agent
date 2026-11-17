@@ -1,0 +1,42 @@
+/* AURA experience selector + always-alive hero core */
+.agent-picker{margin-top:15px;padding:19px 20px 16px;background:linear-gradient(135deg,#0b1a32 0%,#0a1428 65%,#101b38 100%)}
+.agent-picker .section-head{margin-bottom:15px}
+.agent-picker .section-head h3{font-size:16px;letter-spacing:-.035em;margin-top:6px}
+.agent-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.agent-option{position:relative;display:flex;align-items:flex-start;gap:13px;min-width:0;min-height:112px;padding:17px 16px;text-align:left;color:#dceaff;background:linear-gradient(145deg,#102442,#0b1a31);border:1px solid #29496f;border-radius:12px;cursor:pointer;overflow:hidden;transition:transform .22s ease,border-color .22s ease,background .22s ease,box-shadow .22s ease}
+.agent-option:before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:transparent;transition:background .2s ease}
+.agent-option:hover:not(:disabled){transform:translateY(-3px);border-color:#4b83b5;background:linear-gradient(145deg,#153052,#10213c);box-shadow:0 12px 28px #0004}
+.agent-option.selected{border-color:#54c9ed;background:linear-gradient(135deg,#123456,#102542 58%,#17234a);box-shadow:0 0 0 1px #54c9ed30,0 10px 30px #19aee51c,inset 0 0 28px #1b7ca018}
+.agent-option.selected:before{background:linear-gradient(#5ce8ff,#8d8cff)}
+.agent-option:disabled{cursor:default;opacity:.9}
+.agent-option-icon{width:42px;height:42px;flex:none;display:grid;place-items:center;border:1px solid #315c83;border-radius:11px;background:#102e4d;color:#64ddfa;box-shadow:inset 0 0 18px #42cfff12}
+.agent-option-icon svg{width:21px;height:21px}
+.agent-option:nth-child(2) .agent-option-icon{color:#83baff;background:#142d4e;border-color:#385d89}
+.agent-option:nth-child(3) .agent-option-icon{color:#c2a0ff;background:#211e45;border-color:#5b4c8b}
+.agent-option-copy{display:flex;flex-direction:column;gap:7px;min-width:0;padding-top:1px}
+.agent-option-copy b{font-size:12px;line-height:1.35;color:#f0f6ff;letter-spacing:-.02em}
+.agent-option-copy small{font-size:9px;line-height:1.65;color:#91a9c9}
+.agent-check{position:absolute;right:12px;top:12px;width:17px;height:17px;padding:3px;border-radius:50%;color:#041523;background:#66e4ed;filter:drop-shadow(0 0 7px #47dfff80)}
+.agent-selected-note{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin:14px 1px 0;padding-top:12px;border-top:1px solid #1c3a5c;color:#8ea9c9;font-size:9px}
+.agent-selected-note b{color:#bdeeff}
+.agent-picker .preview-tag{color:#8bdcf2}
+.hero-core{isolation:isolate}
+.hero-core:before{content:"";position:absolute;width:190px;height:150px;border-radius:50%;background:radial-gradient(ellipse,#20cfff38 0%,#4b6eff19 38%,transparent 72%);filter:blur(9px);animation:aura-halo 4.8s ease-in-out infinite;z-index:-1}
+.hero-core:after{content:"";position:absolute;width:128px;height:128px;border-radius:50%;border:1px solid #64e7ff35;box-shadow:0 0 32px #3acfff22,inset 0 0 24px #4acfff16;animation:aura-breathe 3.6s ease-in-out infinite;z-index:0;pointer-events:none}
+.aura-orb{position:relative;width:116px;height:116px;gap:5px;background:radial-gradient(circle at 36% 25%,#a0f5ff 0%,#46c9f5 17%,#1765bd 49%,#171d54 82%);border:1px solid #b2f5ff;box-shadow:0 0 22px #2ddcffaa,0 0 55px #4d76ff66,inset -10px -14px 28px #080d3d88;animation:aura-float 4.2s ease-in-out infinite;z-index:2}
+.aura-orb:before{content:"";position:absolute;inset:5px;border-radius:50%;border:1px solid #c4f8ff4d;box-shadow:inset 0 0 17px #b7f8ff35;animation:aura-inner 5s linear infinite}
+.aura-orb svg{width:35px;height:35px;filter:drop-shadow(0 0 8px #fff);animation:aura-signal 2.2s ease-in-out infinite}
+.aura-orb b{font-size:11px;text-shadow:0 0 12px #8ceeff;letter-spacing:.24em}
+.orbit{width:174px;height:120px;border-color:#51cfff88;box-shadow:0 0 13px #3bcfff20;animation:aura-orbit 13s linear infinite}
+.orbit.o2{width:190px;height:98px;border-color:#b18bff80;animation:aura-orbit-reverse 17s linear infinite}
+.orb-label{bottom:0;text-shadow:0 0 10px #4bbfff66}
+@keyframes aura-float{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-6px) scale(1.035)}}
+@keyframes aura-breathe{0%,100%{transform:scale(.94);opacity:.42}50%{transform:scale(1.12);opacity:.9}}
+@keyframes aura-halo{0%,100%{transform:scale(.88);opacity:.55}50%{transform:scale(1.16);opacity:1}}
+@keyframes aura-orbit{from{transform:rotate(-28deg)}to{transform:rotate(332deg)}}
+@keyframes aura-orbit-reverse{from{transform:rotate(35deg)}to{transform:rotate(-325deg)}}
+@keyframes aura-inner{to{transform:rotate(360deg)}}
+@keyframes aura-signal{0%,100%{transform:scale(1);opacity:.9}50%{transform:scale(1.12);opacity:1}}
+@media(max-width:900px){.agent-options{gap:9px}.agent-option{padding:13px;min-height:120px;gap:10px}.agent-option-icon{width:36px;height:36px}.agent-option-copy b{font-size:11px}}
+@media(max-width:650px){.agent-picker{padding:15px 13px}.agent-options{grid-template-columns:1fr;gap:8px}.agent-option{min-height:82px;align-items:center;padding:12px}.agent-option-copy{gap:4px}.agent-option-copy small{font-size:8px}.agent-check{top:50%;transform:translateY(-50%)}.hero-core{height:165px}}
+@media(prefers-reduced-motion:reduce){.aura-orb,.aura-orb svg,.hero-core:before,.hero-core:after,.orbit,.agent-option{animation:none!important;transition:none!important}}
