@@ -322,7 +322,7 @@ async def voice_socket(websocket: WebSocket):
     await websocket.accept()
     agent_type = websocket.query_params.get("agent", "general")
     llm_provider = websocket.query_params.get(
-        "llm_provider", get_setting("AURA_LLM_PROVIDER", "sarvam")
+        "llm_provider", get_setting("AURA_LLM_PROVIDER", "qwen")
     ).strip().lower()
     if llm_provider not in {"sarvam", "qwen"}:
         await websocket.send_json({"type": "error", "message": "Unknown reasoning model selection"})
