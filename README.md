@@ -111,21 +111,45 @@ The Knowledge Base UI has an agent selector and reads the selected agent's check
 
 The source browser displays the original Markdown before embedding. This source-content API does not generate embeddings or prove that a document is indexed.
 
-Runtime retrieval data is stored separately:
+Runtime retrieval data is physically isolated by agent. Each agent has its own SQLite database and FAISS index:
 
-- SQLite: `data/knowledge_base/knowledge.sqlite3`
-- FAISS index: `data/knowledge_base/knowledge.faiss`
-- The directory is excluded by `.gitignore`.
+- General Assistant: `data/knowledge_base/general/knowledge.sqlite3` and `knowledge.faiss`
+- Admission Counsellor: `data/knowledge_base/customer_service/knowledge.sqlite3` and `knowledge.faiss`
+- AI Tutor: `data/knowledge_base/tutor/knowledge.sqlite3` and `knowledge.faiss`
+- The complete `data/knowledge_base/` directory is excluded by `.gitignore`.
 
-Existing read-only APIs expose the runtime index:
+The previous root-level Gemini files (`data/knowledge_base/knowledge.sqlite3` and `knowledge.faiss`, if present) are not read, migrated, overwritten, or deleted by this implementation. New agent stores use Granite 384-dimensional vectors only.
 
-- `GET /api/knowledge/status`
-- `GET /api/knowledge/documents`
-- `GET /api/knowledge/documents/{document_id}/chunks`
+Configure these variables on the **Backend EC2 only**:
 
-**Current indexing status:** the existing backend KB implementation still uses its previous Gemini embedding configuration and a global document/chunk schema. Agent-specific source documents are now committed and visible in the UI, but agent-tagged ingestion, the hosted Granite embedding client, metadata-filtered FAISS retrieval and end-to-end RAG isolation are the next backend task. Do not claim those are complete yet.
+```env
+AURA_EMBEDDING_API_URL=http://100.95.233.66:8080/embed
+AURA_API_KEY=<same secret configured as AURA_API_KEY on the Granite model server>
+AURA_KB_DATA_DIR=data/knowledge_base
+```
 
-Set `VITE_AURA_API_BASE_URL` when the frontend and backend have different origins. Back up runtime SQLite and FAISS files before changing embedding dimensions or migrating stored vectors.
+The backend calls the private Granite service using `POST /embed`, JSON `{"texts": ["..."]}`, and the `X-API-Key` header. The API key must never be sent to the browser or committed to Git.
+
+Agent-scoped read APIs accept an `agent` query parameter (`general`, `customer_service`, or `tutor`):
+
+- `GET /api/knowledge/status?agent=general`
+- `GET /api/knowledge/documents?agent=general`
+- `GET /api/knowledge/documents/{document_id}/chunks?agent=general`
+- `PUT /api/admin/knowledge/enabled?agent=general` with `{"enabled": true|false}`
+
+To index or refresh the checked-in Markdown sources for exactly one agent, call the protected endpoint from an IP listed in `AURA_ADMIN_ALLOWED_IPS`:
+
+```bash
+curl -X POST "http://127.0.0.1/api/admin/knowledge/index-sources?agent=general"
+curl -X POST "http://127.0.0.1/api/admin/knowledge/index-sources?agent=customer_service"
+curl -X POST "http://127.0.0.1/api/admin/knowledge/index-sources?agent=tutor"
+```
+
+Run one request per agent. Each request indexes only that agent's source folder and writes only to that agent's database and FAISS index. Re-indexing a source replaces that source's prior record in the same agent store; it does not touch another agent's data. Retrieval is disabled by default independently for each agent. Enable it separately after indexing and verification.
+
+Voice retrieval passes the selected voice agent ID to the KB layer, so the General Assistant can query only `general`, Admission Counsellor only `customer_service`, and AI Tutor only `tutor`. A KB outage is logged without taking down the voice pipeline.
+
+Set `VITE_AURA_API_BASE_URL` when the frontend and backend have different origins. Back up each agent's SQLite and FAISS files before manual maintenance.
 
 ## WebRTC / TURN setup
 
