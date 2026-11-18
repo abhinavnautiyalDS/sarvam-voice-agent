@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, ChevronRight, Database, FileSearch, FileText, Layers3, LoaderCircle, Network, RefreshCw, Scissors, ShieldCheck, ToggleLeft, ToggleRight } from 'lucide-react';
 
+const API_BASE = ((import.meta.env.VITE_AURA_API_BASE_URL as string | undefined) || '').replace(/\/$/, '');
+
 type KBStatus = { enabled: boolean; documents: number; chunks: number; embedding_model: string; dimensions: number };
 type Document = { id: string; title: string; source: string; created_at: string; chunk_count: number };
 type Chunk = { id: number; chunk_index: number; content: string };
@@ -19,7 +21,7 @@ export default function KnowledgeBase() {
     setLoading(true); setError('');
     try {
       const [statusResponse, docsResponse] = await Promise.all([
-        fetch('/api/knowledge/status'), fetch('/api/knowledge/documents')
+        fetch(`${API_BASE}/api/knowledge/status`), fetch(`${API_BASE}/api/knowledge/documents`)
       ]);
       if (!statusResponse.ok || !docsResponse.ok) throw new Error('Knowledge Base API is not available yet.');
       const statusData: KBStatus = await statusResponse.json();
@@ -35,7 +37,7 @@ export default function KnowledgeBase() {
     if (!selected) { setChunks([]); return; }
     let active = true;
     setChunkLoading(true);
-    fetch(`/api/knowledge/documents/${encodeURIComponent(selected)}/chunks`)
+    fetch(`${API_BASE}/api/knowledge/documents/${encodeURIComponent(selected)}/chunks`)
       .then(async response => { if (!response.ok) throw new Error('Could not load document chunks'); return response.json(); })
       .then(data => { if (active) setChunks(data.chunks || []); })
       .catch(e => { if (active) setError(e instanceof Error ? e.message : 'Could not load chunks'); })
@@ -47,7 +49,7 @@ export default function KnowledgeBase() {
     if (!status) return;
     setToggleBusy(true); setError('');
     try {
-      const response = await fetch('/api/admin/knowledge/enabled', {
+      const response = await fetch(`${API_BASE}/api/admin/knowledge/enabled`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !status.enabled })
       });
