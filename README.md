@@ -93,21 +93,39 @@ VITE_AURA_WS_URL=wss://<backend-tunnel-host>/ws/voice
 
 Set `AURA_ALLOWED_ORIGINS` on the backend to the exact Cloudflare Pages origin (for example, `https://<project>.pages.dev`). Do not use a wildcard origin for a credentialed browser API. The Quick Tunnel hostname is temporary and can change; update both Pages variables when it changes.
 
-## Knowledge Base storage and inspection
+## Knowledge Base sources, indexing and inspection
 
-The Knowledge Base's actual content is runtime data, not checked into Git:
+Agent-specific source content is checked into Git and is separate from the runtime vector index:
+
+- Admission Counsellor: `backend/knowledge_sources/admission_counsellor/dv_university_admissions_handbook.md`
+- AI Tutor: `backend/knowledge_sources/ai_tutor/ml_ai_learning_curriculum.md`
+- General Assistant: `backend/knowledge_sources/general/friendly_companion_reference.md`
+
+The DV University handbook is fictional demonstration content. It is not Delhi University, is not affiliated with Delhi University, and its sample courses, eligibility guidance and fee amounts must not be presented as official DU information.
+
+The Knowledge Base UI has an agent selector and reads the selected agent's checked-in Markdown source through:
+
+- `GET /api/knowledge/sources?agent=general`
+- `GET /api/knowledge/sources?agent=customer_service`
+- `GET /api/knowledge/sources?agent=tutor`
+
+The source browser displays the original Markdown before embedding. This source-content API does not generate embeddings or prove that a document is indexed.
+
+Runtime retrieval data is stored separately:
 
 - SQLite: `data/knowledge_base/knowledge.sqlite3`
 - FAISS index: `data/knowledge_base/knowledge.faiss`
 - The directory is excluded by `.gitignore`.
 
-The read-only API exposes the live inventory and stored chunks:
+Existing read-only APIs expose the runtime index:
 
 - `GET /api/knowledge/status`
 - `GET /api/knowledge/documents`
 - `GET /api/knowledge/documents/{document_id}/chunks`
 
-The frontend Knowledge Base view reads those APIs. Set `VITE_AURA_API_BASE_URL` when the frontend and backend have different origins. Existing stored vectors/indexes are not automatically migrated by changing embedding configuration; preserve and back up the runtime SQLite and FAISS files before any embedding-model migration.
+**Current indexing status:** the existing backend KB implementation still uses its previous Gemini embedding configuration and a global document/chunk schema. Agent-specific source documents are now committed and visible in the UI, but agent-tagged ingestion, the hosted Granite embedding client, metadata-filtered FAISS retrieval and end-to-end RAG isolation are the next backend task. Do not claim those are complete yet.
+
+Set `VITE_AURA_API_BASE_URL` when the frontend and backend have different origins. Back up runtime SQLite and FAISS files before changing embedding dimensions or migrating stored vectors.
 
 ## WebRTC / TURN setup
 
