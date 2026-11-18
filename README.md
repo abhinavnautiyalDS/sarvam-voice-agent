@@ -67,6 +67,48 @@ The browser WebRTC app and the local Pipecat runner both load their system promp
 
 The fine-tuned BERT-Tiny weights are maintained in the `hinglish-language-switch-llm` repository and are fetched lazily on first classifier use. The model was evaluated on held-out data, but it should also be evaluated on consented, anonymized transcripts from your target STT system before relying on production routing. It predicts dominant script only; it does not distinguish English from Hinglish when both are written in Latin characters.
 
+## AURA hosted voice backend: reasoning model selection
+
+The AURA browser voice session keeps STT and TTS fixed while allowing the caller/operator to select the reasoning provider before starting a session:
+
+- **Sarvam Gamma** (default): uses the configured `SARVAM_LLM_MODEL` and the Sarvam chat-completions API.
+- **Hosted Qwen3-0.6B**: uses the private model-server OpenAI-compatible endpoint over the Backend EC2's Tailscale network. The browser never receives the Qwen API key and never connects directly to the model server.
+
+Configure these variables on the **Backend EC2 only** when enabling Qwen:
+
+```env
+QWEN_API_KEY=<same API key configured for the llama.cpp model server>
+AURA_QWEN_CHAT_COMPLETIONS_URL=http://100.95.233.66:8081/v1/chat/completions
+AURA_QWEN_MODEL=aura-qwen3-0.6b
+```
+
+Keep the Qwen API key out of Git, frontend build variables, browser storage, and client requests. The default provider remains Sarvam unless the voice session sends `llm_provider=qwen`.
+
+For a frontend deployed separately on Cloudflare Pages, set these **Pages build environment variables**:
+
+```env
+VITE_AURA_API_BASE_URL=https://<backend-tunnel-host>
+VITE_AURA_WS_URL=wss://<backend-tunnel-host>/ws/voice
+```
+
+Set `AURA_ALLOWED_ORIGINS` on the backend to the exact Cloudflare Pages origin (for example, `https://<project>.pages.dev`). Do not use a wildcard origin for a credentialed browser API. The Quick Tunnel hostname is temporary and can change; update both Pages variables when it changes.
+
+## Knowledge Base storage and inspection
+
+The Knowledge Base's actual content is runtime data, not checked into Git:
+
+- SQLite: `data/knowledge_base/knowledge.sqlite3`
+- FAISS index: `data/knowledge_base/knowledge.faiss`
+- The directory is excluded by `.gitignore`.
+
+The read-only API exposes the live inventory and stored chunks:
+
+- `GET /api/knowledge/status`
+- `GET /api/knowledge/documents`
+- `GET /api/knowledge/documents/{document_id}/chunks`
+
+The frontend Knowledge Base view reads those APIs. Set `VITE_AURA_API_BASE_URL` when the frontend and backend have different origins. Existing stored vectors/indexes are not automatically migrated by changing embedding configuration; preserve and back up the runtime SQLite and FAISS files before any embedding-model migration.
+
 ## WebRTC / TURN setup
 
 For hosted deployments, STUN alone may fail on office, mobile, or restrictive NAT/firewall networks. The app now prefers Cloudflare Realtime TURN when both `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_KEY_API_TOKEN` are configured, then tries Hugging Face TURN, and finally falls back to Google STUN. You can also configure `TURN_SERVER_URL`, `TURN_SERVER_USERNAME`, and `TURN_SERVER_CREDENTIAL` for another TURN provider. Keep credentials in Streamlit Secrets or environment variables; never commit them.
