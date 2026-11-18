@@ -239,6 +239,84 @@ def _snapshot(agent: CloudVoiceAgent) -> dict:
     }
 
 
+@app.post("/api/chat")
+async def text_chat(request: Request):
+    """Text-only AURA reasoning path. Deliberately bypasses STT and TTS."""
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Expected a JSON object")
+    message = body.get("message")
+    agent_type = body.get("agent", "general")
+    llm_provider = body.get("llm_provider", "qwen")
+    if not isinstance(message, str) or not message.strip():
+        raise HTTPException(status_code=400, detail="message must be a non-empty string")
+    if len(message) > 12000:
+        raise HTTPException(status_code=413, detail="message is too long")
+    if agent_type not in KNOWLEDGE_SOURCE_AGENTS:
+        raise HTTPException(status_code=400, detail="Unknown agent selection")
+    if llm_provider not in {"sarvam", "qwen"}:
+        raise HTTPException(status_code=400, detail="Unknown reasoning model selection")
+
+    from backend.script_classifier import classify_transcript
+    started = time.perf_counter()
+    classifier = await asyncio.to_thread(classify_transcript, message, "4.4")
+    label = classifier.get("label", "none") if classifier.get("available") else "none"
+    language_by_label = {
+        "hi-IN": "hindi", "en-IN": "english", "pa-IN": "punjabi",
+        "bn-IN": "bengali", "gu-IN": "gujarati", "kn-IN": "kannada",
+        "ml-IN": "malayalam", "mr-IN": "marathi", "ta-IN": "tamil",
+        "te-IN": "telugu", "as-IN": "assamese",
+    }
+    # Build only the reasoning state needed by _get_llm_response. Do not call
+    # CloudVoiceAgent.__init__: it starts the realtime STT worker thread.
+    agent = CloudVoiceAgent.__new__(CloudVoiceAgent)
+    agent.agent_type = agent_type
+    agent.llm_provider = llm_provider
+    agent.llm_model = get_setting("SARVAM_LLM_MODEL", "sarvam-105b-conversations")
+    agent.sarvam_api_key = get_setting("SARVAM_API_KEY", "")
+    agent.qwen_api_key = get_setting("QWEN_API_KEY", "") or None
+    agent.qwen_chat_completions_url = get_setting(
+        "AURA_QWEN_CHAT_COMPLETIONS_URL",
+        "http://100.95.233.66:8081/v1/chat/completions",
+    )
+    agent.qwen_model = get_setting("AURA_QWEN_MODEL", "aura-qwen3-0.6b")
+    agent.gemma_api_key = get_setting("GEMINI_API_KEY", "") or get_setting("GEMMA_API_KEY", "") or None
+    agent.current_response_language = language_by_label.get(label, "english")
+    agent.previous_turn_context = None
+    agent.last_llm_input = message.strip()
+    agent.llm_latency_ms = None
+    agent.error = ""
+
+    if llm_provider == "qwen" and not agent.qwen_api_key:
+        raise HTTPException(status_code=503, detail="Qwen API authentication is not configured on the backend")
+    if llm_provider == "sarvam" and not agent.sarvam_api_key:
+        raise HTTPException(status_code=503, detail="Sarvam API authentication is not configured on the backend")
+    try:
+        answer = await agent._get_llm_response(message.strip(), "text-input", classifier)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Reasoning request failed: {type(exc).__name__}: {exc}") from exc
+    if not answer:
+        raise HTTPException(status_code=502, detail="Reasoning model returned an empty response")
+    try:
+        kb_status = knowledge_base.status(agent_type)
+        retrieval_enabled = bool(kb_status.get("enabled", False)) if isinstance(kb_status, dict) else False
+    except Exception:
+        retrieval_enabled = False
+    return {
+        "user_text": message.strip(),
+        "assistant_text": answer,
+        "detected_language": label,
+        "confidence": classifier.get("confidence"),
+        "classifier_available": bool(classifier.get("available")),
+        "classifier_latency_ms": classifier.get("latency_ms"),
+        "llm_provider": llm_provider,
+        "llm_latency_ms": agent.llm_latency_ms,
+        "total_latency_ms": round((time.perf_counter() - started) * 1000, 1),
+        "retrieval_enabled": retrieval_enabled,
+        "audio_generated": False,
+    }
+
+
 @app.websocket("/ws/voice")
 async def voice_socket(websocket: WebSocket):
     await websocket.accept()
