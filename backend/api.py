@@ -4,6 +4,8 @@ import asyncio
 import os
 import queue
 import time
+
+import httpx
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -131,29 +133,76 @@ async def knowledge_sources(agent: str = "general"):
 
 
 @app.get("/api/knowledge/status")
-async def knowledge_status():
-    return knowledge_base.status()
+async def knowledge_status(agent: str = "general"):
+    try:
+        return knowledge_base.status(agent)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/knowledge/documents")
-async def knowledge_documents():
-    return {"documents": knowledge_base.list_documents()}
+async def knowledge_documents(agent: str = "general"):
+    try:
+        return {"agent_id": agent, "documents": knowledge_base.list_documents(agent)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/knowledge/documents/{document_id}/chunks")
-async def knowledge_document_chunks(document_id: str):
-    if document_id not in {item["id"] for item in knowledge_base.list_documents()}:
-        raise HTTPException(status_code=404, detail="Knowledge document not found")
-    return {"chunks": knowledge_base.list_chunks(document_id)}
+async def knowledge_document_chunks(document_id: str, agent: str = "general"):
+    try:
+        documents = knowledge_base.list_documents(agent)
+        if document_id not in {item["id"] for item in documents}:
+            raise HTTPException(status_code=404, detail="Knowledge document not found for this agent")
+        return {"agent_id": agent, "chunks": knowledge_base.list_chunks(agent, document_id)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.put("/api/admin/knowledge/enabled")
-async def knowledge_enabled(request: Request):
+async def knowledge_enabled(request: Request, agent: str = "general"):
     _require_admin_ip(request)
     body = await request.json()
     if not isinstance(body, dict) or not isinstance(body.get("enabled"), bool):
         raise HTTPException(status_code=400, detail="Expected {enabled: boolean}")
-    return knowledge_base.set_enabled(body["enabled"])
+    try:
+        return knowledge_base.set_enabled(agent, body["enabled"])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/admin/knowledge/index-sources")
+async def knowledge_index_sources(request: Request, agent: str = "general"):
+    """Index only the selected agent's checked-in Markdown sources into its private store."""
+    _require_admin_ip(request)
+    selected = KNOWLEDGE_SOURCE_AGENTS.get(agent)
+    if selected is None:
+        raise HTTPException(status_code=400, detail="Unknown knowledge-base agent")
+    source_dir = Path(__file__).resolve().parent / "knowledge_sources" / selected["directory"]
+    if not source_dir.exists():
+        raise HTTPException(status_code=404, detail="No source directory exists for this agent")
+    files = sorted(source_dir.glob("*.md"))
+    if not files:
+        raise HTTPException(status_code=404, detail="No Markdown source documents exist for this agent")
+    indexed = []
+    try:
+        for path in files:
+            result = knowledge_base.ingest_text(
+                agent_id=agent,
+                title=path.stem.replace("_", " ").replace("-", " ").title(),
+                content=path.read_text(encoding="utf-8"),
+                source=f"github:{agent}:{path.name}",
+            )
+            indexed.append({"filename": path.name, **result})
+    except (RuntimeError, ValueError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=502, detail=f"Knowledge indexing failed: {type(exc).__name__}: {exc}") from exc
+    return {
+        "agent_id": agent,
+        "agent_name": selected["name"],
+        "indexed_documents": len(indexed),
+        "documents": indexed,
+        "status": knowledge_base.status(agent),
+    }
 
 
 @app.get("/api/health")
