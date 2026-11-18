@@ -4,6 +4,7 @@ import asyncio
 import os
 import queue
 import time
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -87,6 +88,46 @@ async def admin_update_config(request: Request):
     save_config(updates)
     return {"status": "saved", "config": public_config(), "note": "New voice sessions will use the updated settings."}
 
+
+
+KNOWLEDGE_SOURCE_AGENTS = {
+    "general": {
+        "name": "General Assistant",
+        "directory": "general",
+    },
+    "customer_service": {
+        "name": "Admission Counsellor",
+        "directory": "admission_counsellor",
+    },
+    "tutor": {
+        "name": "AI Tutor",
+        "directory": "ai_tutor",
+    },
+}
+
+
+@app.get("/api/knowledge/sources")
+async def knowledge_sources(agent: str = "general"):
+    """Read the checked-in, agent-specific source documents for the KB browser."""
+    selected = KNOWLEDGE_SOURCE_AGENTS.get(agent)
+    if selected is None:
+        raise HTTPException(status_code=400, detail="Unknown knowledge-base agent")
+    source_dir = Path(__file__).resolve().parent / "knowledge_sources" / selected["directory"]
+    documents = []
+    if source_dir.exists():
+        for path in sorted(source_dir.glob("*.md")):
+            documents.append({
+                "id": path.stem,
+                "title": path.stem.replace("_", " ").replace("-", " ").title(),
+                "filename": path.name,
+                "content": path.read_text(encoding="utf-8"),
+                "source": "GitHub · checked-in knowledge source",
+            })
+    return {
+        "agent_id": agent,
+        "agent_name": selected["name"],
+        "documents": documents,
+    }
 
 
 @app.get("/api/knowledge/status")
