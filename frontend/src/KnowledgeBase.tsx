@@ -167,7 +167,7 @@ export default function KnowledgeBase() {
       <div className="kb-source-list"><div className="kb-subhead"><b><FileText/> Indexed documents</b><span>{documents.length} SOURCES</span></div>
         {loading ? <div className="kb-source-empty"><LoaderCircle className="spin"/><b>Loading knowledge store…</b></div> :
           documents.length ? <div className="kb-documents">{documents.map(doc => <button key={doc.id} className={selected === doc.id ? 'kb-document selected' : 'kb-document'} onClick={() => setSelected(doc.id)}><FileText/><span><b>{doc.title}</b><small>{doc.source} · {doc.chunk_count} chunks</small></span><ChevronRight/></button>)}</div> :
-          <div className="kb-source-empty"><Layers3/><b>No indexed documents</b><p>Documents added by the project owner will appear here. Uploading and re-indexing are intentionally not available in this UI.</p></div>}
+          <div className="kb-source-empty"><Layers3/><b>No indexed documents</b><p>Index this agent’s checked-in sources above. Its documents and chunks appear here after successful indexing.</p></div>}
       </div>
       <div className="kb-document-view"><div className="kb-subhead"><b><FileText/> Stored content</b><span>{activeDoc ? `${chunks.length} CHUNKS` : 'SELECT A DOCUMENT'}</span></div>
         {!selected ? <div className="kb-document-empty"><Database/><h3>Knowledge content will appear here</h3><p>Select an indexed document to read its extracted text in the same chunk format used by the retrieval index.</p></div> :
