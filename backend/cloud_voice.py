@@ -549,7 +549,7 @@ class CloudVoiceAgent:
         # off the asyncio event loop.
         knowledge_context = ""
         try:
-            passages = await asyncio.to_thread(knowledge_base.retrieve, user_text, 4)
+            passages = await asyncio.to_thread(knowledge_base.retrieve, self.agent_type, user_text, 4)
             if passages:
                 formatted = "\n\n".join(
                     f"[{item['title']}]\n{item['content']}" for item in passages
