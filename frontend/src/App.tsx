@@ -7,7 +7,7 @@ type Tab='playground'|'knowledge'|'pipeline'|'evaluation'|'settings';
 type AgentKey='general'|'customer_service'|'tutor';
 const agents:{id:AgentKey;name:string;description:string;voice:string;icon:any}[]=[
 {id:'general',name:'General AI Assistant',description:'Open conversations, questions and everyday problem-solving.',voice:'3fe4afbc-3bde-4c97-ab8e-37e3fb8c7ba2',icon:Sparkles},
-{id:'customer_service',name:'Course Counsellor',description:'Explore courses, fees, sessions, admissions and student support.',voice:'029d327b-987b-4879-8375-454cba8424ec',icon:GraduationCap},
+{id:'customer_service',name:'Admission Counsellor',description:'DV University courses, eligibility, fees and admission guidance.',voice:'029d327b-987b-4879-8375-454cba8424ec',icon:GraduationCap},
 {id:'tutor',name:'AI Tutor',description:'Learn concepts with examples, explanations and guided practice.',voice:'0ffd8c73-7c39-4b22-92f4-ebf33a6fae2c',icon:GraduationCap}
 ];
 type Turn={id:number;user:string;language:string;confidence:string;answer:string;summary:string;time:string};
