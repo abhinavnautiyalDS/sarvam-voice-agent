@@ -13,6 +13,7 @@ export type AuraVoiceState = {
   tts_latency_ms?: number | null;
   error?: string;
   error_stage?: string;
+  llm_provider?: string;
 };
 
 type VoiceClientOptions = {
@@ -33,10 +34,12 @@ export class AuraVoiceClient {
   private analyser?: AnalyserNode;
   private animationFrame = 0;
   private readonly agent: string;
+  private readonly llmProvider: string;
 
-  constructor(options: VoiceClientOptions, agent: string = "general") {
+  constructor(options: VoiceClientOptions, agent: string = "general", llmProvider: string = "sarvam") {
     this.options = options;
     this.agent = agent;
+    this.llmProvider = llmProvider;
   }
 
   async start() {
@@ -45,7 +48,7 @@ export class AuraVoiceClient {
     const configured = import.meta.env.VITE_AURA_WS_URL as string | undefined;
     const baseUrl = configured || `${secure ? 'wss' : 'ws'}://${window.location.host}/ws/voice`;
     const separator = baseUrl.includes("?") ? "&" : "?";
-    const wsUrl = `${baseUrl}${separator}agent=${encodeURIComponent(this.agent)}`;
+    const wsUrl = `${baseUrl}${separator}agent=${encodeURIComponent(this.agent)}&llm_provider=${encodeURIComponent(this.llmProvider)}`;
     this.options.onStatus('Connecting to AURA backend…');
 
     this.socket = new WebSocket(wsUrl);
