@@ -22,12 +22,14 @@ export default function KnowledgeBase() {
   const [sourceData, setSourceData] = useState<SourceResponse | null>(null);
   const [sourceLoading, setSourceLoading] = useState(false);
   const [sourceError, setSourceError] = useState('');
+  const [indexBusy, setIndexBusy] = useState(false);
+  const [indexMessage, setIndexMessage] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
       const [statusResponse, docsResponse] = await Promise.all([
-        fetch(`${API_BASE}/api/knowledge/status`), fetch(`${API_BASE}/api/knowledge/documents`)
+        fetch(`${API_BASE}/api/knowledge/status?agent=${encodeURIComponent(sourceAgent)}`), fetch(`${API_BASE}/api/knowledge/documents?agent=${encodeURIComponent(sourceAgent)}`)
       ]);
       if (!statusResponse.ok || !docsResponse.ok) throw new Error('Knowledge Base API is not available yet.');
       const statusData: KBStatus = await statusResponse.json();
@@ -36,7 +38,7 @@ export default function KnowledgeBase() {
       setSelected(current => current && docsData.documents.some(d => d.id === current) ? current : (docsData.documents[0]?.id || ''));
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not load Knowledge Base'); }
     finally { setLoading(false); }
-  }, []);
+  }, [sourceAgent]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -58,19 +60,19 @@ export default function KnowledgeBase() {
     if (!selected) { setChunks([]); return; }
     let active = true;
     setChunkLoading(true);
-    fetch(`${API_BASE}/api/knowledge/documents/${encodeURIComponent(selected)}/chunks`)
+    fetch(`${API_BASE}/api/knowledge/documents/${encodeURIComponent(selected)}/chunks?agent=${encodeURIComponent(sourceAgent)}`)
       .then(async response => { if (!response.ok) throw new Error('Could not load document chunks'); return response.json(); })
       .then(data => { if (active) setChunks(data.chunks || []); })
       .catch(e => { if (active) setError(e instanceof Error ? e.message : 'Could not load chunks'); })
       .finally(() => { if (active) setChunkLoading(false); });
     return () => { active = false; };
-  }, [selected]);
+  }, [selected, sourceAgent]);
 
   const toggle = async () => {
     if (!status) return;
     setToggleBusy(true); setError('');
     try {
-      const response = await fetch(`${API_BASE}/api/admin/knowledge/enabled`, {
+      const response = await fetch(`${API_BASE}/api/admin/knowledge/enabled?agent=${encodeURIComponent(sourceAgent)}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !status.enabled })
       });
@@ -81,14 +83,26 @@ export default function KnowledgeBase() {
     finally { setToggleBusy(false); }
   };
 
+  const indexSources = async () => {
+    setIndexBusy(true); setIndexMessage(''); setError('');
+    try {
+      const response = await fetch(`${API_BASE}/api/admin/knowledge/index-sources?agent=${encodeURIComponent(sourceAgent)}`, { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Could not index this agent source');
+      setIndexMessage(`${data.indexed_documents} source document(s) indexed for ${data.agent_name}.`);
+      await load();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not index source documents'); }
+    finally { setIndexBusy(false); }
+  };
+
   const activeDoc = documents.find(d => d.id === selected);
   return <section className="panel page-panel">
-    <div className="section-head"><div><span className="eyebrow">CENTRAL KNOWLEDGE STORE</span><h3>Knowledge Base</h3><p>Browse owner-indexed documents and inspect the exact text chunks stored for retrieval.</p></div><span className="readonly">READ ONLY VIEW</span></div>
+    <div className="section-head"><div><span className="eyebrow">CENTRAL KNOWLEDGE STORE</span><h3>Knowledge Base</h3><p>Browse owner-indexed documents and inspect the exact text chunks stored for retrieval.</p></div><span className="readonly">AGENT-ISOLATED INDEXES</span></div>
 
     <section style={{ marginBottom: 18, padding: 18, border: '1px solid #28517d', borderRadius: 10, background: '#0a1930' }}>
       <div className="section-head">
-        <div><span className="eyebrow">AGENT-SCOPED SOURCE LIBRARY</span><h3>Browse knowledge by selected agent</h3><p>These are the original Markdown source files stored in this GitHub branch. They are visible here before embedding and FAISS indexing.</p></div>
-        <span className="readonly">SOURCE CONTENT · NOT YET INDEXED</span>
+        <div><span className="eyebrow">AGENT-SCOPED SOURCE LIBRARY</span><h3>Browse knowledge by selected agent</h3><p>These are the original Markdown files. Indexing writes only to the selected agent’s private SQLite database and FAISS index.</p></div>
+        <span className="readonly">SOURCE LIBRARY · {status?.documents ? `INDEXED · ${status.documents} DOCS` : 'NOT INDEXED'}</span>
       </div>
       <label htmlFor="kb-agent-select" style={{ display: 'block', color: '#a9c3e4', fontSize: 10, fontWeight: 700, marginBottom: 7 }}>Selected agent</label>
       <select id="kb-agent-select" value={sourceAgent} onChange={event => setSourceAgent(event.target.value)} style={{ background: '#111f38', color: '#edf5ff', border: '1px solid #315984', borderRadius: 8, padding: '10px 12px', minWidth: 250, marginBottom: 14 }}>
@@ -96,6 +110,13 @@ export default function KnowledgeBase() {
         <option value="customer_service">Admission Counsellor · DV University</option>
         <option value="tutor">AI Tutor · Machine Learning & AI</option>
       </select>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <button className="kb-refresh" onClick={() => void indexSources()} disabled={indexBusy || sourceLoading}>
+          {indexBusy ? <LoaderCircle className="spin"/> : <Database/>} {indexBusy ? 'Indexing…' : 'Index selected agent sources'}
+        </button>
+        <span style={{ color: '#8299b8', fontSize: 9 }}>Admin IP access required · re-index updates only this agent</span>
+      </div>
+      {indexMessage && <div className="kb-source-empty"><CheckCircle2/>{indexMessage}</div>}
       {sourceError && <div className="kb-error"><AlertCircle/>{sourceError}</div>}
       {sourceLoading ? <div className="kb-source-empty"><LoaderCircle className="spin"/> Loading agent sources…</div> :
         <div>
@@ -113,7 +134,7 @@ export default function KnowledgeBase() {
           {!sourceData?.documents.length && <div className="kb-source-empty"><FileText/><b>No source documents for this agent</b></div>}
         </div>
       }
-      <p style={{ margin: '10px 0 0', color: '#8299b8', fontSize: 9 }}>Changing this selector only changes which agent's source content is displayed. Embedding generation and agent-filtered retrieval will be performed separately on the backend.</p>
+      <p style={{ margin: '10px 0 0', color: '#8299b8', fontSize: 9 }}>Changing this selector switches the source browser, SQLite database, FAISS index, retrieval status and document inspector to that agent only.</p>
     </section>
 
     <section className="kb-process-demo">
@@ -157,6 +178,6 @@ export default function KnowledgeBase() {
           </div>}
       </div>
     </div>
-    <div className="kb-footnote"><CheckCircle2/><span>Browsing is read-only. No upload, attach, embedding, or re-index controls are exposed here.</span><span className="kb-faiss"><Network/> FAISS + SQLite</span></div>
+    <div className="kb-footnote"><CheckCircle2/><span>Source files are GitHub-managed. Indexing is available only to an allowed admin IP and affects the selected agent only.</span><span className="kb-faiss"><Network/> FAISS + SQLite</span></div>
   </section>;
 }
