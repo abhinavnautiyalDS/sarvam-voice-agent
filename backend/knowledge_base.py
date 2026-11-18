@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import threading
 import uuid
@@ -11,22 +12,38 @@ import faiss
 import httpx
 import numpy as np
 
-DATA_DIR = Path(os.getenv("AURA_KB_DATA_DIR", "data/knowledge_base"))
-DB_PATH = DATA_DIR / "knowledge.sqlite3"
-INDEX_PATH = DATA_DIR / "knowledge.faiss"
-EMBED_MODEL = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-2")
-DIMENSIONS = int(os.getenv("GEMINI_EMBEDDING_DIMENSIONS", "768"))
-_LOCK = threading.RLock()
+AGENTS = {"general", "customer_service", "tutor"}
+DATA_ROOT = Path(os.getenv("AURA_KB_DATA_DIR", "data/knowledge_base"))
+EMBEDDING_URL = os.getenv("AURA_EMBEDDING_API_URL", "http://100.95.233.66:8080/embed").strip()
+EMBEDDING_MODEL = "granite-embedding-97m-multilingual-r2"
+DIMENSIONS = 384
+CHUNK_SIZE = 1200
+CHUNK_OVERLAP = 180
+EMBED_BATCH_SIZE = 16
+_LOCKS = {agent: threading.RLock() for agent in AGENTS}
 
 
-def _connect() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+def _agent_id(agent_id: str) -> str:
+    normalized = (agent_id or "").strip().lower()
+    if normalized not in AGENTS:
+        raise ValueError(f"Unknown knowledge-base agent: {agent_id}")
+    return normalized
+
+
+def _paths(agent_id: str) -> tuple[Path, Path]:
+    directory = DATA_ROOT / _agent_id(agent_id)
+    return directory / "knowledge.sqlite3", directory / "knowledge.faiss"
+
+
+def _connect(agent_id: str) -> sqlite3.Connection:
+    db_path, _ = _paths(agent_id)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("""CREATE TABLE IF NOT EXISTS documents (
-        id TEXT PRIMARY KEY, title TEXT NOT NULL, source TEXT NOT NULL,
+        id TEXT PRIMARY KEY, title TEXT NOT NULL, source TEXT NOT NULL UNIQUE,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )""")
     conn.execute("""CREATE TABLE IF NOT EXISTS chunks (
@@ -42,75 +59,120 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
-def _embed(texts: list[str], task_type: str) -> np.ndarray:
-    key = os.getenv("GEMINI_API_KEY", "").strip()
+def _embed(texts: list[str]) -> np.ndarray:
+    if not texts:
+        return np.empty((0, DIMENSIONS), dtype="float32")
+    key = os.getenv("AURA_API_KEY", "").strip()
     if not key:
-        raise RuntimeError("GEMINI_API_KEY is not configured on the backend")
-    payload = {"requests": [{"model": f"models/{EMBED_MODEL}", "content": {"parts": [{"text": text}]},
-        "taskType": task_type, "outputDimensionality": DIMENSIONS} for text in texts]}
-    response = httpx.post(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{EMBED_MODEL}:batchEmbedContents",
-        params={"key": key}, json=payload, timeout=90,
-    )
-    response.raise_for_status()
-    matrix = np.asarray([item["values"] for item in response.json()["embeddings"]], dtype="float32")
-    if matrix.ndim != 2 or matrix.shape[1] != DIMENSIONS:
-        raise ValueError(f"Embedding dimension mismatch; expected {DIMENSIONS}")
+        raise RuntimeError("AURA_API_KEY is not configured on the backend")
+    vectors: list[list[float]] = []
+    with httpx.Client(timeout=90) as client:
+        for offset in range(0, len(texts), EMBED_BATCH_SIZE):
+            batch = texts[offset:offset + EMBED_BATCH_SIZE]
+            response = client.post(
+                EMBEDDING_URL,
+                headers={"X-API-Key": key},
+                json={"texts": batch},
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("dimension") != DIMENSIONS:
+                raise ValueError(
+                    f"Granite embedding dimension mismatch: expected {DIMENSIONS}, "
+                    f"received {payload.get('dimension')}"
+                )
+            batch_vectors = payload.get("embeddings")
+            if not isinstance(batch_vectors, list) or len(batch_vectors) != len(batch):
+                raise ValueError("Granite embedding response count does not match request")
+            vectors.extend(batch_vectors)
+    matrix = np.asarray(vectors, dtype="float32")
+    if matrix.shape != (len(texts), DIMENSIONS):
+        raise ValueError(f"Invalid Granite embedding matrix shape: {matrix.shape}")
+    if not np.isfinite(matrix).all():
+        raise ValueError("Granite returned non-finite embedding values")
     faiss.normalize_L2(matrix)
     return matrix
+
+
+def _chunk_text(content: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
+    clean = re.sub(r"\s+", " ", content).strip()
+    if not clean:
+        return []
+    pieces: list[str] = []
+    start = 0
+    while start < len(clean):
+        end = min(len(clean), start + chunk_size)
+        pieces.append(clean[start:end])
+        if end == len(clean):
+            break
+        start = max(start + 1, end - overlap)
+    return pieces
 
 
 def _build_index(conn: sqlite3.Connection):
     rows = conn.execute("SELECT vector FROM chunks ORDER BY id").fetchall()
     index = faiss.IndexFlatIP(DIMENSIONS)
     if rows:
-        index.add(np.vstack([np.frombuffer(row["vector"], dtype="float32") for row in rows]))
+        vectors = np.vstack([np.frombuffer(row["vector"], dtype="float32") for row in rows])
+        if vectors.shape[1] != DIMENSIONS:
+            raise ValueError("Stored vector dimensions do not match the Granite index")
+        index.add(vectors)
     return index
 
 
-def _search_index(conn: sqlite3.Connection):
+def _load_index(agent_id: str, conn: sqlite3.Connection):
+    _, index_path = _paths(agent_id)
     expected = conn.execute("SELECT COUNT(*) n FROM chunks").fetchone()["n"]
-    if INDEX_PATH.exists():
+    if index_path.exists():
         try:
-            index = faiss.read_index(str(INDEX_PATH))
+            index = faiss.read_index(str(index_path))
             if index.d == DIMENSIONS and index.ntotal == expected:
                 return index
         except Exception:
             pass
     index = _build_index(conn)
-    temporary = INDEX_PATH.with_suffix(".faiss.tmp")
+    temporary = index_path.with_suffix(".faiss.tmp")
     faiss.write_index(index, str(temporary))
-    os.replace(temporary, INDEX_PATH)
+    os.replace(temporary, index_path)
     return index
 
 
-def status() -> dict[str, Any]:
-    with _LOCK:
-        conn = _connect()
+def status(agent_id: str) -> dict[str, Any]:
+    agent = _agent_id(agent_id)
+    with _LOCKS[agent]:
+        conn = _connect(agent)
         try:
             docs = conn.execute("SELECT COUNT(*) n FROM documents").fetchone()["n"]
             chunks = conn.execute("SELECT COUNT(*) n FROM chunks").fetchone()["n"]
             enabled = conn.execute("SELECT value FROM settings WHERE key='enabled'").fetchone()["value"] == "true"
-            return {"enabled": enabled, "documents": docs, "chunks": chunks,
-                    "embedding_model": EMBED_MODEL, "dimensions": DIMENSIONS}
+            return {
+                "agent_id": agent, "enabled": enabled, "documents": docs, "chunks": chunks,
+                "embedding_model": EMBEDDING_MODEL, "dimensions": DIMENSIONS,
+                "database": str(_paths(agent)[0]), "index": str(_paths(agent)[1]),
+            }
         finally:
             conn.close()
 
 
-def set_enabled(enabled: bool) -> dict[str, Any]:
-    with _LOCK:
-        conn = _connect()
+def set_enabled(agent_id: str, enabled: bool) -> dict[str, Any]:
+    agent = _agent_id(agent_id)
+    with _LOCKS[agent]:
+        conn = _connect(agent)
         try:
-            conn.execute("UPDATE settings SET value=? WHERE key='enabled'", ("true" if enabled else "false",))
+            conn.execute(
+                "UPDATE settings SET value=? WHERE key='enabled'",
+                ("true" if enabled else "false",),
+            )
             conn.commit()
         finally:
             conn.close()
-    return status()
+    return status(agent)
 
 
-def list_documents() -> list[dict[str, Any]]:
-    with _LOCK:
-        conn = _connect()
+def list_documents(agent_id: str) -> list[dict[str, Any]]:
+    agent = _agent_id(agent_id)
+    with _LOCKS[agent]:
+        conn = _connect(agent)
         try:
             rows = conn.execute("""SELECT d.id,d.title,d.source,d.created_at,COUNT(c.id) chunk_count
                 FROM documents d LEFT JOIN chunks c ON c.document_id=d.id
@@ -120,62 +182,92 @@ def list_documents() -> list[dict[str, Any]]:
             conn.close()
 
 
-def list_chunks(document_id: str) -> list[dict[str, Any]]:
-    with _LOCK:
-        conn = _connect()
+def list_chunks(agent_id: str, document_id: str) -> list[dict[str, Any]]:
+    agent = _agent_id(agent_id)
+    with _LOCKS[agent]:
+        conn = _connect(agent)
         try:
-            rows = conn.execute("SELECT id,chunk_index,content FROM chunks WHERE document_id=? ORDER BY chunk_index", (document_id,)).fetchall()
+            rows = conn.execute(
+                "SELECT id,chunk_index,content FROM chunks WHERE document_id=? ORDER BY chunk_index",
+                (document_id,),
+            ).fetchall()
             return [dict(row) for row in rows]
         finally:
             conn.close()
 
 
-def ingest_text(title: str, content: str, source: str = "owner-ingested", chunk_size: int = 1200, overlap: int = 180) -> dict[str, Any]:
-    clean = " ".join(content.split())
-    if not clean:
+def ingest_text(
+    agent_id: str,
+    title: str,
+    content: str,
+    source: str = "owner-ingested",
+    chunk_size: int = CHUNK_SIZE,
+    overlap: int = CHUNK_OVERLAP,
+) -> dict[str, Any]:
+    agent = _agent_id(agent_id)
+    pieces = _chunk_text(content, chunk_size, overlap)
+    if not pieces:
         raise ValueError("Document content is empty")
-    pieces, start = [], 0
-    while start < len(clean):
-        end = min(len(clean), start + chunk_size)
-        pieces.append(clean[start:end])
-        if end == len(clean):
-            break
-        start = max(start + 1, end - overlap)
-    batches = [_embed(pieces[i:i + 64], "RETRIEVAL_DOCUMENT") for i in range(0, len(pieces), 64)]
-    vectors = np.vstack(batches)
-    document_id = uuid.uuid4().hex
-    with _LOCK:
-        conn = _connect()
+    vectors = _embed(pieces)
+    with _LOCKS[agent]:
+        conn = _connect(agent)
         try:
-            conn.execute("INSERT INTO documents(id,title,source) VALUES(?,?,?)", (document_id, title, source))
-            for i, piece in enumerate(pieces):
-                conn.execute("INSERT INTO chunks(document_id,chunk_index,content,vector) VALUES(?,?,?,?)",
-                             (document_id, i, piece, vectors[i].tobytes()))
+            existing = conn.execute("SELECT id FROM documents WHERE source=?", (source,)).fetchone()
+            if existing:
+                document_id = existing["id"]
+                conn.execute("DELETE FROM documents WHERE id=?", (document_id,))
+            else:
+                document_id = uuid.uuid4().hex
+            conn.execute(
+                "INSERT INTO documents(id,title,source) VALUES(?,?,?)",
+                (document_id, title, source),
+            )
+            conn.executemany(
+                "INSERT INTO chunks(document_id,chunk_index,content,vector) VALUES(?,?,?,?)",
+                [(document_id, i, piece, vectors[i].tobytes()) for i, piece in enumerate(pieces)],
+            )
             conn.commit()
             index = _build_index(conn)
-            temp_path = INDEX_PATH.with_suffix(".faiss.tmp")
-            faiss.write_index(index, str(temp_path))
-            os.replace(temp_path, INDEX_PATH)
+            _, index_path = _paths(agent)
+            temporary = index_path.with_suffix(".faiss.tmp")
+            faiss.write_index(index, str(temporary))
+            os.replace(temporary, index_path)
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
-    return {"id": document_id, "title": title, "chunks": len(pieces)}
+    return {"id": document_id, "agent_id": agent, "title": title, "chunks": len(pieces)}
 
 
-def retrieve(query: str, top_k: int = 4) -> list[dict[str, Any]]:
-    if not query.strip() or not status()["enabled"]:
+def retrieve(agent_id: str, query: str, top_k: int = 4) -> list[dict[str, Any]]:
+    agent = _agent_id(agent_id)
+    if not query or not query.strip():
         return []
-    vector = _embed([query], "RETRIEVAL_QUERY")
-    with _LOCK:
-        conn = _connect()
+    with _LOCKS[agent]:
+        conn = _connect(agent)
         try:
-            index = _search_index(conn)
+            enabled = conn.execute(
+                "SELECT value FROM settings WHERE key='enabled'"
+            ).fetchone()["value"] == "true"
+            if not enabled:
+                return []
+        finally:
+            conn.close()
+    vector = _embed([query])
+    with _LOCKS[agent]:
+        conn = _connect(agent)
+        try:
+            index = _load_index(agent, conn)
             if index.ntotal == 0:
                 return []
             scores, ids = index.search(vector, min(max(1, top_k), index.ntotal))
-            rows = conn.execute("""SELECT c.id,c.content,d.title,d.source FROM chunks c
-                JOIN documents d ON d.id=c.document_id ORDER BY c.id""").fetchall()
-            return [{"score": float(score), "content": rows[int(idx)]["content"],
-                     "title": rows[int(idx)]["title"], "source": rows[int(idx)]["source"]}
-                    for score, idx in zip(scores[0], ids[0]) if idx >= 0]
+            rows = conn.execute("""SELECT c.id,c.content,d.title,d.source
+                FROM chunks c JOIN documents d ON d.id=c.document_id ORDER BY c.id""").fetchall()
+            return [
+                {"score": float(score), "content": rows[int(idx)]["content"],
+                 "title": rows[int(idx)]["title"], "source": rows[int(idx)]["source"]}
+                for score, idx in zip(scores[0], ids[0]) if idx >= 0
+            ]
         finally:
             conn.close()
