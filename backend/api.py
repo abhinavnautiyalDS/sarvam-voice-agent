@@ -144,6 +144,7 @@ def _snapshot(agent: CloudVoiceAgent) -> dict:
         "tts_latency_ms": agent.tts_latency_ms,
         "error": agent.error,
         "error_stage": agent.error_stage,
+        "llm_provider": agent.llm_provider,
         "audio_frames_received": agent.audio_frames_received,
     }
 
@@ -152,6 +153,13 @@ def _snapshot(agent: CloudVoiceAgent) -> dict:
 async def voice_socket(websocket: WebSocket):
     await websocket.accept()
     agent_type = websocket.query_params.get("agent", "general")
+    llm_provider = websocket.query_params.get(
+        "llm_provider", get_setting("AURA_LLM_PROVIDER", "sarvam")
+    ).strip().lower()
+    if llm_provider not in {"sarvam", "qwen"}:
+        await websocket.send_json({"type": "error", "message": "Unknown reasoning model selection"})
+        await websocket.close(code=1008)
+        return
     voice_ids = {
         "general": "3fe4afbc-3bde-4c97-ab8e-37e3fb8c7ba2",
         "customer_service": "029d327b-987b-4879-8375-454cba8424ec",
@@ -178,6 +186,13 @@ async def voice_socket(websocket: WebSocket):
         agent_type=agent_type,
         output_source=output,
         llm_model=get_setting("SARVAM_LLM_MODEL", "sarvam-105b-conversations"),
+        llm_provider=llm_provider,
+        qwen_api_key=get_setting("QWEN_API_KEY", "") or None,
+        qwen_chat_completions_url=get_setting(
+            "AURA_QWEN_CHAT_COMPLETIONS_URL",
+            "http://100.95.233.66:8081/v1/chat/completions",
+        ),
+        qwen_model=get_setting("AURA_QWEN_MODEL", "aura-qwen3-0.6b"),
         tts_model=get_setting("BAKBAK_TTS_MODEL", "m1"),
         classifier_enabled=True,
         classifier_backend="bert_tiny",
@@ -195,6 +210,12 @@ async def voice_socket(websocket: WebSocket):
         "output_sample_rate": 24000,
         "stt_mode": os.getenv("SARVAM_STT_MODE", "verbose"),
         "classifier": "bert_tiny_4.4",
+        "llm_provider": llm_provider,
+        "reasoning_model": (
+            get_setting("AURA_QWEN_MODEL", "aura-qwen3-0.6b")
+            if llm_provider == "qwen"
+            else get_setting("SARVAM_LLM_MODEL", "sarvam-105b-conversations")
+        ),
     })
 
     async def receive_audio():
