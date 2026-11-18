@@ -36,7 +36,7 @@ export class AuraVoiceClient {
   private readonly agent: string;
   private readonly llmProvider: string;
 
-  constructor(options: VoiceClientOptions, agent: string = "general", llmProvider: string = "sarvam") {
+  constructor(options: VoiceClientOptions, agent: string = "general", llmProvider: string = "qwen") {
     this.options = options;
     this.agent = agent;
     this.llmProvider = llmProvider;
