@@ -27,7 +27,7 @@ class CloudVoiceAgent:
         agent_type: str = "general",
         output_source=None,
         llm_model: str = "sarvam-105b-conversations",
-        llm_provider: str = "sarvam",
+        llm_provider: str = "qwen",
         qwen_api_key: str | None = None,
         qwen_chat_completions_url: str = "http://100.95.233.66:8081/v1/chat/completions",
         qwen_model: str = "aura-qwen3-0.6b",
@@ -580,6 +580,7 @@ class CloudVoiceAgent:
                 ),
                 "max_tokens": max_tokens,
                 "temperature": 0.4,
+                "chat_template_kwargs": {"enable_thinking": False},
             }
             async with httpx.AsyncClient(timeout=60) as client:
                 response = await client.post(
