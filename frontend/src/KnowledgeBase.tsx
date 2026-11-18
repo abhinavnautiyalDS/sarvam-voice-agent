@@ -6,6 +6,8 @@ const API_BASE = ((import.meta.env.VITE_AURA_API_BASE_URL as string | undefined)
 type KBStatus = { enabled: boolean; documents: number; chunks: number; embedding_model: string; dimensions: number };
 type Document = { id: string; title: string; source: string; created_at: string; chunk_count: number };
 type Chunk = { id: number; chunk_index: number; content: string };
+type SourceDocument = { id: string; title: string; filename: string; content: string; source: string };
+type SourceResponse = { agent_id: string; agent_name: string; documents: SourceDocument[] };
 
 export default function KnowledgeBase() {
   const [status, setStatus] = useState<KBStatus | null>(null);
@@ -16,6 +18,10 @@ export default function KnowledgeBase() {
   const [chunkLoading, setChunkLoading] = useState(false);
   const [error, setError] = useState('');
   const [toggleBusy, setToggleBusy] = useState(false);
+  const [sourceAgent, setSourceAgent] = useState('general');
+  const [sourceData, setSourceData] = useState<SourceResponse | null>(null);
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [sourceError, setSourceError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -33,6 +39,21 @@ export default function KnowledgeBase() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    let active = true;
+    setSourceLoading(true);
+    setSourceError('');
+    fetch(`${API_BASE}/api/knowledge/sources?agent=${encodeURIComponent(sourceAgent)}`)
+      .then(async response => {
+        if (!response.ok) throw new Error('Could not load this agent knowledge source.');
+        return response.json() as Promise<SourceResponse>;
+      })
+      .then(data => { if (active) setSourceData(data); })
+      .catch(e => { if (active) setSourceError(e instanceof Error ? e.message : 'Could not load source documents'); })
+      .finally(() => { if (active) setSourceLoading(false); });
+    return () => { active = false; };
+  }, [sourceAgent]);
   useEffect(() => {
     if (!selected) { setChunks([]); return; }
     let active = true;
@@ -64,6 +85,37 @@ export default function KnowledgeBase() {
   return <section className="panel page-panel">
     <div className="section-head"><div><span className="eyebrow">CENTRAL KNOWLEDGE STORE</span><h3>Knowledge Base</h3><p>Browse owner-indexed documents and inspect the exact text chunks stored for retrieval.</p></div><span className="readonly">READ ONLY VIEW</span></div>
 
+    <section style={{ marginBottom: 18, padding: 18, border: '1px solid #28517d', borderRadius: 10, background: '#0a1930' }}>
+      <div className="section-head">
+        <div><span className="eyebrow">AGENT-SCOPED SOURCE LIBRARY</span><h3>Browse knowledge by selected agent</h3><p>These are the original Markdown source files stored in this GitHub branch. They are visible here before embedding and FAISS indexing.</p></div>
+        <span className="readonly">SOURCE CONTENT · NOT YET INDEXED</span>
+      </div>
+      <label htmlFor="kb-agent-select" style={{ display: 'block', color: '#a9c3e4', fontSize: 10, fontWeight: 700, marginBottom: 7 }}>Selected agent</label>
+      <select id="kb-agent-select" value={sourceAgent} onChange={event => setSourceAgent(event.target.value)} style={{ background: '#111f38', color: '#edf5ff', border: '1px solid #315984', borderRadius: 8, padding: '10px 12px', minWidth: 250, marginBottom: 14 }}>
+        <option value="general">General Assistant</option>
+        <option value="customer_service">Admission Counsellor · DV University</option>
+        <option value="tutor">AI Tutor · Machine Learning & AI</option>
+      </select>
+      {sourceError && <div className="kb-error"><AlertCircle/>{sourceError}</div>}
+      {sourceLoading ? <div className="kb-source-empty"><LoaderCircle className="spin"/> Loading agent sources…</div> :
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10, color: '#9db6d5', fontSize: 10 }}>
+            <b>{sourceData?.agent_name || 'Agent'} · {sourceData?.documents.length || 0} source document(s)</b>
+            <span>GitHub-managed · Read only</span>
+          </div>
+          {(sourceData?.documents || []).map(document => <article key={document.id} style={{ border: '1px solid #24476d', borderRadius: 9, overflow: 'hidden', marginBottom: 12, background: '#081427' }}>
+            <header style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '11px 13px', background: '#102746', borderBottom: '1px solid #24476d' }}>
+              <b style={{ color: '#e3f1ff', fontSize: 11 }}>{document.title}</b>
+              <small style={{ color: '#86a7ca' }}>{document.filename}</small>
+            </header>
+            <pre style={{ margin: 0, padding: 15, color: '#c5d7ed', font: '10px/1.75 Manrope, sans-serif', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 560, overflowY: 'auto' }}>{document.content}</pre>
+          </article>)}
+          {!sourceData?.documents.length && <div className="kb-source-empty"><FileText/><b>No source documents for this agent</b></div>}
+        </div>
+      }
+      <p style={{ margin: '10px 0 0', color: '#8299b8', fontSize: 9 }}>Changing this selector only changes which agent's source content is displayed. Embedding generation and agent-filtered retrieval will be performed separately on the backend.</p>
+    </section>
+
     <section className="kb-process-demo">
       <div className="kb-process-heading">
         <div><span className="eyebrow">HOW KNOWLEDGE GETS PREPARED</span><h3>From a document to searchable intelligence</h3><p>A transparent look at the owner-managed ingestion workflow behind AURA.</p></div>
@@ -76,7 +128,7 @@ export default function KnowledgeBase() {
         <i className="kb-process-arrow">→</i>
         <article><span className="kb-step-no">03</span><div className="kb-step-icon"><Scissors/></div><b>Content chunked</b><p>Text is split into overlapping sections for focused retrieval.</p><small>SEGMENT · CHUNKS</small></article>
         <i className="kb-process-arrow">→</i>
-        <article><span className="kb-step-no">04</span><div className="kb-step-icon"><Network/></div><b>Embeddings created</b><p>Gemini converts each chunk into a numerical vector.</p><small>VECTORIZE · GEMINI API</small></article>
+        <article><span className="kb-step-no">04</span><div className="kb-step-icon"><Network/></div><b>Embeddings created</b><p>The configured embedding service converts each chunk into a numerical vector.</p><small>VECTORIZE · EMBEDDING API</small></article>
         <i className="kb-process-arrow">→</i>
         <article><span className="kb-step-no">05</span><div className="kb-step-icon"><Database/></div><b>Index stored</b><p>Vectors go to FAISS; document text and metadata to SQLite.</p><small>INDEX · FAISS + SQLITE</small></article>
         <i className="kb-process-arrow">→</i>
