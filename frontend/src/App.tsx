@@ -23,11 +23,11 @@ const stages=[
 {n:'02',name:'Speech to text',sub:'Sarvam Saaras',detail:'Speech is transcribed into text.',icon:AudioLines,color:'blue'},
 {n:'03',name:'Language classifier',sub:'Custom BERT-Tiny · 12 labels',detail:'Predicts the language/script category for this utterance.',icon:BrainCircuit,color:'violet'},
 {n:'04',name:'Knowledge Base',sub:'Optional FAISS lookup',detail:'When enabled, embeds the query and retrieves the most relevant stored chunks.',icon:Network,color:'teal'},
-{n:'05',name:'LLM reasoning',sub:'Sarvam Gamma',detail:'Responds from model knowledge, with retrieved context only when needed.',icon:Cpu,color:'blue'},
+{n:'05',name:'LLM reasoning',sub:'Hosted Qwen3-0.6B',detail:'Hosted Qwen3-0.6B responds from model knowledge, with retrieved context only when needed.',icon:Cpu,color:'blue'},
 {n:'06',name:'Speech generation',sub:'BakBak Raya TTS',detail:'Converts the final response into speech.',icon:Volume2,color:'violet'}
 ];
 export default function App(){
- const [tab,setTab]=useState<Tab>('playground'),[agentType,setAgentType]=useState<AgentKey>('general'),[reasoningProvider,setReasoningProvider]=useState<'sarvam'|'qwen'>('sarvam'),[turns,setTurns]=useState(seed),[selected,setSelected]=useState(5),[query,setQuery]=useState(''),[search,setSearch]=useState(''),[expanded,setExpanded]=useState(5),[listening,setListening]=useState(false),[stage,setStage]=useState(3),[showHistory,setShowHistory]=useState(true);
+ const [tab,setTab]=useState<Tab>('playground'),[agentType,setAgentType]=useState<AgentKey>('general'),[reasoningProvider,setReasoningProvider]=useState<'sarvam'|'qwen'>('qwen'),[turns,setTurns]=useState(seed),[selected,setSelected]=useState(5),[query,setQuery]=useState(''),[search,setSearch]=useState(''),[expanded,setExpanded]=useState(5),[listening,setListening]=useState(false),[stage,setStage]=useState(3),[showHistory,setShowHistory]=useState(true);
  const [voiceStatus,setVoiceStatus]=useState('Backend connection not started'),[voiceData,setVoiceData]=useState<AuraVoiceState>({}),[voiceLevel,setVoiceLevel]=useState(0),[sending,setSending]=useState(false);
  const voiceClient=useRef<AuraVoiceClient|null>(null);
  const startVoice=async()=>{try{const client=new AuraVoiceClient({onState:setVoiceData,onStatus:setVoiceStatus,onAudioLevel:setVoiceLevel},agentType,reasoningProvider);voiceClient.current=client;await client.start();setListening(true);}catch(error){voiceClient.current?.stop();voiceClient.current=null;setListening(false);setVoiceLevel(0);setVoiceStatus(error instanceof Error?error.message:'Could not start voice session');}};
