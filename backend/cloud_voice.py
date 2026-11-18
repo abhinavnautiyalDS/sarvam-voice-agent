@@ -27,6 +27,10 @@ class CloudVoiceAgent:
         agent_type: str = "general",
         output_source=None,
         llm_model: str = "sarvam-105b-conversations",
+        llm_provider: str = "sarvam",
+        qwen_api_key: str | None = None,
+        qwen_chat_completions_url: str = "http://100.95.233.66:8081/v1/chat/completions",
+        qwen_model: str = "aura-qwen3-0.6b",
         gemma_api_key: str | None = None,
         tts_model: str = "m1",
         classifier_enabled: bool = True,
@@ -41,6 +45,10 @@ class CloudVoiceAgent:
         self.agent_type = agent_type
         self.output_source = output_source
         self.llm_model = llm_model
+        self.llm_provider = (llm_provider or "sarvam").strip().lower()
+        self.qwen_api_key = qwen_api_key
+        self.qwen_chat_completions_url = qwen_chat_completions_url
+        self.qwen_model = qwen_model
         self.gemma_api_key = gemma_api_key
         self.tts_model = tts_model
         self.classifier_enabled = classifier_enabled
@@ -556,6 +564,40 @@ class CloudVoiceAgent:
             self.error = f"Knowledge Base unavailable: {type(exc).__name__}: {exc}"
         prompt_context += knowledge_context
         max_tokens = int(os.getenv("SARVAM_LLM_MAX_TOKENS", "120"))
+
+        if self.llm_provider == "qwen":
+            if not self.qwen_api_key:
+                raise ValueError("Qwen selected but QWEN_API_KEY is not configured on the backend.")
+            qwen_payload = {
+                "model": self.qwen_model,
+                "messages": (
+                    [{"role": "system", "content": prompt_context}]
+                    + [message for turn in prior_turns for message in (
+                        {"role": "user", "content": turn["user"]},
+                        {"role": "assistant", "content": turn["assistant"]},
+                    )]
+                    + [{"role": "user", "content": user_text}]
+                ),
+                "max_tokens": max_tokens,
+                "temperature": 0.4,
+            }
+            async with httpx.AsyncClient(timeout=60) as client:
+                response = await client.post(
+                    self.qwen_chat_completions_url,
+                    headers={
+                        "Authorization": f"Bearer {self.qwen_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=qwen_payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+            self.llm_latency_ms = round((time.perf_counter() - started) * 1000, 1)
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            answer = (content or "").strip()
+            if not answer:
+                raise RuntimeError("Hosted Qwen returned an empty response.")
+            return answer
 
         if self.llm_model == "gemma-4-26b-a4b-it":
             if not self.gemma_api_key:
