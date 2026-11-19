@@ -460,7 +460,7 @@ class CloudVoiceAgent:
         )
         # Keep only a bounded rolling summary; raw turn transcripts are not retained.
         combined = f"{previous} {current}".strip()
-        self.conversation_summary = compact(combined, limit=900)
+        self.conversation_summary = combined[-900:].lstrip()
 
     @staticmethod
     def _is_meaningful_short_turn(text: str) -> bool:
