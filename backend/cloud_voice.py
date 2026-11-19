@@ -417,6 +417,9 @@ class CloudVoiceAgent:
         else:
             self.last_language_source = "Multilingual BERT-Tiny prediction; Saaras metadata retained for comparison"
 
+        if generation != self._response_generation or not self.running:
+            return
+
         response_language_by_label = {
             "hi-IN": "hindi", "en-IN": "english", "pa-IN": "punjabi",
             "bn-IN": "bengali", "gu-IN": "gujarati", "kn-IN": "kannada",
