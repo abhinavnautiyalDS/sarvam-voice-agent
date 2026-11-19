@@ -99,7 +99,9 @@ class CloudVoiceAgent:
         self.error = ""
         self.error_stage = ""
         self.audio_frames_received = 0
+        self.audio_bytes_received = 0
         self.audio_bytes_sent = 0
+        self.audio_chunks_dropped = 0
 
     def start(self):
         if self.running:
@@ -128,7 +130,9 @@ class CloudVoiceAgent:
         self.last_user_text = ""
         self.live_transcript = ""
         self.audio_frames_received = 0
+        self.audio_bytes_received = 0
         self.audio_bytes_sent = 0
+        self.audio_chunks_dropped = 0
         self.output_bytes_pushed = 0
         self.thread = threading.Thread(target=self._run_thread, daemon=True)
         self.thread.start()
@@ -145,16 +149,20 @@ class CloudVoiceAgent:
         self.thread = None
 
     def push_audio(self, pcm16_mono_16k: bytes):
-        if not self.running:
+        """Queue one mono PCM16/16 kHz chunk and account for actual input audio."""
+        if not self.running or not pcm16_mono_16k:
             return
+        self.audio_frames_received += 1
+        self.audio_bytes_received += len(pcm16_mono_16k)
         try:
             self.audio_in.put_nowait(pcm16_mono_16k)
         except queue.Full:
             try:
                 self.audio_in.get_nowait()
+                self.audio_chunks_dropped += 1
                 self.audio_in.put_nowait(pcm16_mono_16k)
             except queue.Empty:
-                pass
+                self.audio_chunks_dropped += 1
 
     def _run_thread(self):
         try:
@@ -162,8 +170,9 @@ class CloudVoiceAgent:
         except Exception as exc:
             self.error = f"{type(exc).__name__}: {exc}"
             self.pipeline_status = "Failed"
-            if not self.error_stage:
+            if self.error_stage in {"", "STT/WebSocket"}:
                 self.error_stage = "STT/WebSocket"
+                self.stt_status = "Failed — see pipeline error"
 
     async def _run(self):
         params = urllib.parse.urlencode({
@@ -211,6 +220,8 @@ class CloudVoiceAgent:
                 "audio": base64.b64encode(chunk).decode("utf-8"),
             }))
             self.audio_bytes_sent += len(chunk)
+            if self.stt_status in {"Connected — waiting for speech", "Listening"}:
+                self.stt_status = "Audio streaming to Sarvam"
 
     async def _receive_stt(self, ws):
         async for raw in ws:
