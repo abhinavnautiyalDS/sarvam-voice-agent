@@ -502,7 +502,7 @@ class CloudVoiceAgent:
         import re
 
         def compact(value: str, limit: int = 180) -> str:
-            value = re.sub(r"\\s+", " ", str(value or "")).strip()
+            value = re.sub(r"\s+", " ", str(value or "")).strip()
             if len(value) > limit:
                 value = value[: limit - 1].rsplit(" ", 1)[0] + "…"
             return value
@@ -614,7 +614,7 @@ class CloudVoiceAgent:
         )
         summary = getattr(self, "conversation_summary", "") or "No prior conversation summary."
         prompt_context = (
-            f"{system_prompt}\\n{language_instruction}\\n"
+            f"{system_prompt}\n{language_instruction}\n"
             f"Effective language code for this turn: {effective_language_code}.\\n"
             f"Conversation summary (compact, prior turns only): {summary}\\n"
             f"{language_hint} Saaras metadata: {detected_language}.\\n"
