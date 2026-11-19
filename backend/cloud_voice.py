@@ -461,18 +461,8 @@ class CloudVoiceAgent:
         # Store language codes only; never retain prior raw transcripts.
         self.language_history.append(effective_language_code)
 
-        self.llm_status = "Generating response"
-        try:
-            response = await self._get_llm_response(transcript, detected_language, result)
-        except Exception as exc:
-            self.error_stage = "LLM"
-            self.error = f"{type(exc).__name__}: {exc}"
-            self.llm_status = "Failed"
-            self.pipeline_status = "LLM failed"
-            return
-        if generation != self._response_generation or not self.running:
-            return
-        # Map language labels to BakBak's supported locale codes.
+        # Map language labels to BakBak's supported locale codes before generation,
+        # because the streaming TTS worker starts while Qwen is still generating.
         tts_language_by_label = {
             "hi-IN": "hi", "en-IN": "en", "pa-IN": "pa", "bn-IN": "bn",
             "gu-IN": "gu", "kn-IN": "kn", "ml-IN": "ml", "mr-IN": "mr",
@@ -482,6 +472,47 @@ class CloudVoiceAgent:
             effective_language_code,
             "en" if self.current_response_language == "english" else "hi",
         )
+
+        streamed_tts = False
+        self.llm_status = "Generating response"
+        try:
+            if self.llm_provider == "qwen" and os.getenv("AURA_STREAMING_VOICE", "true").strip().lower() in {"1", "true", "yes", "on"}:
+                streamed_tts = True
+                tts_queue = asyncio.Queue()
+                self.last_tts_input = ""
+                self.tts_status = "Waiting for first Qwen sentence"
+                tts_worker = asyncio.create_task(
+                    self._consume_streaming_tts(tts_queue, tts_language, generation)
+                )
+                try:
+                    response = await self._get_llm_response(
+                        transcript, detected_language, result,
+                        on_text_chunk=tts_queue.put,
+                    )
+                except Exception:
+                    await tts_queue.put(None)
+                    try:
+                        await tts_worker
+                    except Exception:
+                        pass
+                    raise
+                self.llm_status = "Completed"
+                await tts_queue.put(None)
+                await tts_worker
+            else:
+                response = await self._get_llm_response(transcript, detected_language, result)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.error_stage = "LLM" if not streamed_tts else "Streaming LLM/TTS"
+            self.error = f"{type(exc).__name__}: {exc}"
+            self.llm_status = "Failed"
+            self.pipeline_status = "LLM/TTS failed"
+            if streamed_tts:
+                self.tts_status = "Streaming failed"
+            return
+        if generation != self._response_generation or not self.running:
+            return
 
         if not response:
             self.error_stage = "LLM"
@@ -494,6 +525,15 @@ class CloudVoiceAgent:
         response = self._limit_voice_response(response)
         self.last_assistant_text = response
         self._update_conversation_summary(transcript, response, effective_language_code)
+        self.last_assistant_text = response
+        self._update_conversation_summary(transcript, response, effective_language_code)
+
+        if streamed_tts:
+            # Audio was synthesized and queued concurrently with Qwen generation.
+            self.pipeline_status = "Ready"
+            self.stt_status = "Connected — waiting for speech"
+            return
+
         self.llm_status = "Completed"
         self.tts_status = "Generating speech with BakBak Raya"
         self.last_tts_input = response
@@ -655,7 +695,11 @@ class CloudVoiceAgent:
         return ""
 
     async def _get_llm_response(
-        self, user_text: str, detected_language: str = "unknown", classifier_result: dict | None = None
+        self,
+        user_text: str,
+        detected_language: str = "unknown",
+        classifier_result: dict | None = None,
+        on_text_chunk=None,
     ) -> str:
         self.last_llm_input = (
             f"Current language code: {self.current_language_code}\n"
@@ -744,8 +788,7 @@ class CloudVoiceAgent:
                         f"Latest transcription: {user_text}"
                     )},
                 ],
-                # Voice-first defaults: keep answers short and avoid Qwen3 thinking
-                # overhead unless explicitly enabled for an experiment.
+                # Keep Qwen concise and disable private reasoning for voice turns.
                 "max_tokens": max(64, min(int(os.getenv("QWEN_MAX_TOKENS", "128")), 256)),
                 "temperature": float(os.getenv("QWEN_TEMPERATURE", "0.3")),
                 "chat_template_kwargs": {
@@ -753,6 +796,80 @@ class CloudVoiceAgent:
                     in {"1", "true", "yes", "on"}
                 },
             }
+
+            if on_text_chunk is not None:
+                qwen_payload["stream"] = True
+                collected = []
+                pending_text = ""
+                max_chars = max(250, int(os.getenv("VOICE_MAX_ANSWER_CHARS", "850")))
+
+                async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=15.0)) as client:
+                    async with client.stream(
+                        "POST",
+                        self.qwen_chat_completions_url,
+                        headers={
+                            "Authorization": f"Bearer {self.qwen_api_key}",
+                            "Content-Type": "application/json",
+                            "Accept": "text/event-stream",
+                        },
+                        json=qwen_payload,
+                    ) as response:
+                        if response.is_error:
+                            body = (await response.aread()).decode("utf-8", errors="replace")
+                            raise RuntimeError(f"Qwen HTTP {response.status_code}: {body[:2000]}")
+
+                        async for line in response.aiter_lines():
+                            if not line or not line.startswith("data:"):
+                                continue
+                            raw = line[5:].strip()
+                            if raw == "[DONE]":
+                                break
+                            try:
+                                packet = json.loads(raw)
+                            except json.JSONDecodeError:
+                                continue
+                            choices = packet.get("choices") or []
+                            if not choices:
+                                continue
+                            delta = (choices[0].get("delta") or {}).get("content")
+                            if not isinstance(delta, str) or not delta:
+                                continue
+
+                            collected.append(delta)
+                            pending_text += delta
+
+                            # Emit complete spoken sentences; also split very long
+                            # clauses so the TTS request does not wait for the full turn.
+                            while pending_text:
+                                import re
+                                boundary = re.search(r"[.!?।](?:\\s|$)", pending_text)
+                                cut = boundary.end() if boundary else 0
+                                if not cut and len(pending_text) >= 180:
+                                    split_at = pending_text.rfind(" ", 0, 180)
+                                    if split_at >= 70:
+                                        cut = split_at
+                                if not cut:
+                                    break
+                                speakable = pending_text[:cut].strip()
+                                pending_text = pending_text[cut:].lstrip()
+                                if speakable:
+                                    await on_text_chunk(speakable)
+
+                            # Bound speech to the same voice-answer limit as the
+                            # non-streaming path. Qwen may finish generating extra text,
+                            # but excess text is not sent to the caller.
+                            emitted_chars = sum(len(part) for part in collected)
+                            if emitted_chars >= max_chars:
+                                break
+
+                if pending_text.strip():
+                    await on_text_chunk(pending_text.strip())
+                self.llm_latency_ms = round((time.perf_counter() - started) * 1000, 1)
+                answer = self._extract_final_answer("".join(collected))
+                if not answer:
+                    raise RuntimeError("Hosted Qwen returned no final answer after streaming.")
+                return answer
+
             async with httpx.AsyncClient(timeout=60) as client:
                 response = await client.post(
                     self.qwen_chat_completions_url,
@@ -871,6 +988,126 @@ class CloudVoiceAgent:
         self.tts_audio_bytes = len(audio)
         self.tts_latency_ms = round((time.perf_counter() - started) * 1000, 1)
         return audio
+
+    async def _stream_bakbak_audio(self, text: str, language: str):
+        """Yield PCM16/24 kHz chunks from BakBak Raya's SSE streaming endpoint."""
+        stream_url = os.getenv("BAKBAK_TTS_STREAM_URL", "").strip()
+        if not stream_url:
+            base_url = os.getenv(
+                "BAKBAK_TTS_URL",
+                "https://hub.getraya.app/v1/text-to-speech",
+            ).rstrip("/")
+            if base_url.endswith("/text-to-speech"):
+                stream_url = base_url + "/stream"
+            else:
+                stream_url = "https://hub.getraya.app/v1/text-to-speech/stream"
+
+        headers = {
+            "X-API-Key": self.bakbak_api_key,
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+        }
+        payload = {
+            "text": text,
+            "voice_id": self.bakbak_voice_id,
+            "model": self.tts_model,
+            "language": language,
+            "sample_rate": 24000,
+            "speed": float(os.getenv("BAKBAK_TTS_SPEED", "1.0")),
+        }
+        received_audio = False
+        async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=15.0)) as client:
+            async with client.stream("POST", stream_url, headers=headers, json=payload) as response:
+                if response.is_error:
+                    body = (await response.aread()).decode("utf-8", errors="replace")
+                    raise RuntimeError(f"BakBak streaming HTTP {response.status_code}: {body[:1500]}")
+
+                async for line in response.aiter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    raw = line[5:].strip()
+                    if not raw or raw == "[DONE]":
+                        continue
+                    try:
+                        packet = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+
+                    encoded = packet.get("data")
+                    if not encoded:
+                        if packet.get("type") == "error":
+                            raise RuntimeError(f"BakBak streaming error: {packet}")
+                        continue
+
+                    audio_f32 = base64.b64decode(encoded)
+                    if len(audio_f32) < 4:
+                        continue
+                    usable_length = len(audio_f32) - (len(audio_f32) % 4)
+                    samples = np.frombuffer(audio_f32[:usable_length], dtype="<f4")
+                    pcm16 = (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+                    if pcm16:
+                        received_audio = True
+                        self.tts_audio_bytes += len(pcm16)
+                        yield pcm16
+
+                    if packet.get("done") or packet.get("type") == "done":
+                        break
+
+        if not received_audio:
+            raise RuntimeError("BakBak streaming completed without returning audio chunks.")
+
+    async def _consume_streaming_tts(self, text_queue, language: str, generation: int):
+        """Synthesize sentence chunks while Qwen generates and pace PCM to WebRTC."""
+        started = time.perf_counter()
+        pending_pcm = bytearray()
+        total_pcm_bytes = 0
+        self.tts_audio_bytes = 0
+        self.output_bytes_pushed = 0
+
+        async def push_available(final: bool = False):
+            nonlocal total_pcm_bytes
+            while len(pending_pcm) >= 960 or (final and pending_pcm):
+                if generation != self._response_generation or not self.running:
+                    return
+                valid = min(960, len(pending_pcm))
+                frame = bytes(pending_pcm[:valid])
+                del pending_pcm[:valid]
+                if valid < 960:
+                    frame += bytes(960 - valid)
+                if self.output_source is None:
+                    raise RuntimeError("WebRTC output source is not configured")
+                self.output_source.push(frame)
+                total_pcm_bytes += valid
+                self.output_bytes_pushed += valid
+                await asyncio.sleep(0.020)
+
+        while True:
+            text_chunk = await text_queue.get()
+            if text_chunk is None:
+                break
+            if generation != self._response_generation or not self.running:
+                return
+            self.last_tts_input = (self.last_tts_input + " " + text_chunk).strip()
+            self.tts_status = "Streaming speech with BakBak Raya"
+
+            received_for_sentence = False
+            try:
+                async for pcm_chunk in self._stream_bakbak_audio(text_chunk, language):
+                    received_for_sentence = True
+                    pending_pcm.extend(pcm_chunk)
+                    await push_available()
+            except Exception:
+                # Safe fallback only when the stream failed before delivering any
+                # audio for this sentence; never replay a partially spoken sentence.
+                if received_for_sentence:
+                    raise
+                fallback_audio = await self._get_bakbak_audio(text_chunk, language=language)
+                pending_pcm.extend(fallback_audio)
+                await push_available()
+
+        await push_available(final=True)
+        self.tts_latency_ms = round((time.perf_counter() - started) * 1000, 1)
+        self.tts_status = f"Ready — {total_pcm_bytes:,} streamed PCM bytes queued"
 
     async def _enqueue_output(self, pcm16_24k: bytes, generation: int):
         """Play PCM in paced 20 ms frames so interruption can pre-empt playback."""
