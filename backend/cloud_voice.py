@@ -842,7 +842,7 @@ class CloudVoiceAgent:
                 return
             frame = pcm16_24k[offset:offset + frame_bytes]
             if len(frame) < frame_bytes:
-                frame += b"\\x00" * (frame_bytes - len(frame))
+                frame += bytes(frame_bytes - len(frame))
             self.output_source.push(frame)
             self.output_bytes_pushed += min(frame_bytes, len(pcm16_24k) - offset)
             # Yield at the playback cadence. STT partial events can now cancel
