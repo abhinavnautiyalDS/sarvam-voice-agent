@@ -516,12 +516,12 @@ class CloudVoiceAgent:
         """Apply a conservative spoken-answer cap after removing model reasoning."""
         import re
 
-        text = re.sub(r"\\s+", " ", str(content or "")).strip()
+        text = re.sub(r"\s+", " ", str(content or "")).strip()
         max_chars = max(250, int(os.getenv("VOICE_MAX_ANSWER_CHARS", "850")))
         max_sentences = max(2, min(int(os.getenv("VOICE_MAX_ANSWER_SENTENCES", "4")), 8))
 
         # Split only at sentence-ending punctuation followed by whitespace.
-        sentences = re.split(r"(?<=[.!?])\\s+", text)
+        sentences = re.split(r"(?<=[.!?])\s+", text)
         if len(sentences) > max_sentences:
             text = " ".join(sentences[:max_sentences]).strip()
         if len(text) > max_chars:
