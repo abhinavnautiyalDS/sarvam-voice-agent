@@ -500,7 +500,7 @@ class CloudVoiceAgent:
         if generation != self._response_generation or not self.running:
             return
         try:
-            self._enqueue_output(audio)
+            await self._enqueue_output(audio, generation=generation)
         except Exception as exc:
             self.error_stage = "WebRTC output"
             self.error = f"{type(exc).__name__}: {exc}"
@@ -828,14 +828,27 @@ class CloudVoiceAgent:
         self.tts_latency_ms = round((time.perf_counter() - started) * 1000, 1)
         return audio
 
-    def _enqueue_output(self, pcm16_24k: bytes):
-        """Push 24 kHz mono PCM into streamlit-webrtc's PcmAudioSource."""
+    async def _enqueue_output(self, pcm16_24k: bytes, generation: int):
+        """Play PCM in paced 20 ms frames so interruption can pre-empt playback."""
         if len(pcm16_24k) % 2:
             raise ValueError("BakBak returned an odd-length PCM payload")
         if self.output_source is None:
             raise RuntimeError("WebRTC output source is not configured")
-        self.output_source.push(pcm16_24k)
-        self.output_bytes_pushed += len(pcm16_24k)
+
+        # 24 kHz * 20 ms * 2 bytes/sample = 960 bytes per mono PCM16 frame.
+        frame_bytes = 960
+        for offset in range(0, len(pcm16_24k), frame_bytes):
+            if generation != self._response_generation or not self.running:
+                return
+            frame = pcm16_24k[offset:offset + frame_bytes]
+            if len(frame) < frame_bytes:
+                frame += b"\\x00" * (frame_bytes - len(frame))
+            self.output_source.push(frame)
+            self.output_bytes_pushed += min(frame_bytes, len(pcm16_24k) - offset)
+            # Yield at the playback cadence. STT partial events can now cancel
+            # this task and clear the source instead of waiting for the full
+            # response audio to be queued in one synchronous operation.
+            await asyncio.sleep(0.020)
 
     def ingest_webrtc_frame(self, frame):
         """Convert browser audio to mono 16 kHz signed PCM for Saaras."""
