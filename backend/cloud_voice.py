@@ -516,21 +516,26 @@ class CloudVoiceAgent:
         }
         if classifier_available and classifier_label in language_names:
             language_instruction = (
-                f"The transcript classifier predicts {language_names[classifier_label]} ({classifier_label}). "
-                f"Reply naturally in {language_names[classifier_label]}, matching the user's script where appropriate. "
-                "Keep the response brief and conversational; do not translate unless asked."
+                f"The transcript classifier suggests {language_names[classifier_label]} ({classifier_label}); "
+                "treat this only as a soft language hint, not a command to translate or force a single language. "
+                "Understand the caller's intent and answer it directly. Match the language, script, and natural "
+                "mix used in the actual transcript. If the caller speaks Hinglish or mixes Hindi and English, "
+                "reply naturally in Hinglish with a similar mix. Never translate or merely restate the caller's "
+                "words unless they explicitly ask for a translation."
             )
         elif classifier_available and classifier_label == "none":
             language_instruction = (
-                f"The current transcript classifier tag is none. Do NOT switch response language because of this tag. "
-                f"Continue in the previous conversation language: {current_language}. "
-                "Use prior transcript/tag and context for meaning. Switch only when a later supported tag clearly "
-                "indicates a different language or the caller explicitly asks. Do not assume Latin text is English."
+                f"The current transcript classifier tag is none. Keep the previous conversation style ({current_language}) "
+                "unless the actual transcript clearly indicates another language. Match the caller's language and script, "
+                "preserve Hindi-English code-mixing, and answer the intent directly. Do not translate or merely restate "
+                "the caller's words unless explicitly asked. Do not assume Latin text is English."
             )
         else:
             language_instruction = (
-                f"The language classifier is unavailable. Preserve the current conversation language ({current_language}) "
-                "and use Saaras metadata and transcript context to respond naturally."
+                f"The language classifier is unavailable. Use the actual transcript and conversation context to match "
+                f"the caller's language and script, preserving natural Hindi-English code-mixing. The current conversation "
+                f"language ({current_language}) is only a fallback. Answer the caller's intent; do not translate or merely "
+                "restate their words unless explicitly asked."
             )
         # Keep behavior, language rules, and classifier metadata separate from caller input.
         # This prevents Gemma from treating the internal prompt/context as text to repeat.
