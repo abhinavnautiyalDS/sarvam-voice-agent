@@ -74,6 +74,8 @@ class CloudVoiceAgent:
 
         self.audio_in = queue.Queue(maxsize=100)
         self.running = False
+        self._active_response_task = None
+        self._response_generation = 0
         self.thread = None
         self._input_resampler = None
 
@@ -127,6 +129,11 @@ class CloudVoiceAgent:
         self.language_history = []
         self.conversation_summary = ""
         self.current_language_code = "hi-IN"
+        self._response_generation += 1
+        if self._active_response_task and not self._active_response_task.done():
+            self._active_response_task.cancel()
+        self._active_response_task = None
+        self._clear_output()
         self.current_response_language = "hindi"
         if self.turn_buffer_task and not self.turn_buffer_task.done():
             self.turn_buffer_task.cancel()
@@ -144,6 +151,11 @@ class CloudVoiceAgent:
 
     def stop(self):
         self.running = False
+        self._response_generation += 1
+        if self._active_response_task and not self._active_response_task.done():
+            self._active_response_task.cancel()
+        self._active_response_task = None
+        self._clear_output()
         if self.turn_buffer_task and not self.turn_buffer_task.done():
             self.turn_buffer_task.cancel()
         self.turn_buffer_task = None
@@ -189,8 +201,8 @@ class CloudVoiceAgent:
             "encoding": "linear16",
             "sample_rate": "16000",
             "threshold": os.getenv("SARVAM_STT_THRESHOLD", "0.3"),
-            "silence_duration_ms": os.getenv("SARVAM_SILENCE_DURATION_MS", "900"),
-            "min_speech_duration_ms": os.getenv("SARVAM_MIN_SPEECH_DURATION_MS", "300"),
+            "silence_duration_ms": os.getenv("SARVAM_SILENCE_DURATION_MS", "600"),
+            "min_speech_duration_ms": os.getenv("SARVAM_MIN_SPEECH_DURATION_MS", "200"),
         })
         url = f"wss://api.sarvam.ai/speech-to-text-realtime/ws?{params}"
         async with websockets.connect(
@@ -242,6 +254,8 @@ class CloudVoiceAgent:
             elif event_type == "transcript.partial":
                 partial = self._extract_transcript(event)
                 if partial:
+                    # A fresh caller utterance interrupts any in-flight reply immediately.
+                    self._interrupt_response()
                     # Keep a pending short finalized turn visible while Sarvam streams
                     # the next utterance, so the live transcript reflects the context
                     # that the turn buffer is building.
@@ -271,11 +285,11 @@ class CloudVoiceAgent:
                     self.live_transcript = combined
                     self.last_turn_buffer_decision = "SECOND TURN → COMBINE_AND_CLASSIFY"
                     self.last_combined_turn_text = combined
-                    await self._process_final_transcript(combined, event)
+                    self._schedule_response(combined, event)
                 elif not self.turn_buffer_enabled:
                     self.last_turn_buffer_decision = "BUFFERING DISABLED → CLASSIFY_NOW"
                     self.last_combined_turn_text = transcript
-                    await self._process_final_transcript(transcript, event)
+                    self._schedule_response(transcript, event)
                 else:
                     probe = await asyncio.to_thread(classify_language_transcript, transcript, self.classifier_model_variant) if self.classifier_enabled else {"available": False, "confidence": 0.0}
                     reliability, details = self._turn_reliability(transcript, probe)
@@ -291,7 +305,7 @@ class CloudVoiceAgent:
                         self.turn_buffer_task = asyncio.create_task(self._flush_turn_buffer_after_timeout(event))
                     else:
                         self.last_combined_turn_text = transcript
-                        await self._process_final_transcript(transcript, event, classifier_result=probe)
+                        self._schedule_response(transcript, event, classifier_result=probe)
 
             elif event_type == "error":
                 code = event.get("code", "unknown")
@@ -320,7 +334,42 @@ class CloudVoiceAgent:
         score = (0.25 * length_score + 0.20 * meaning_score + 0.20 * confidence + 0.20 * script_score) / 0.85
         return score, {"length": length_score, "meaning": meaning_score, "confidence": confidence, "script": script_score}
 
-    async def _process_final_transcript(self, transcript: str, event: dict, classifier_result: dict | None = None):
+    def _clear_output(self):
+        """Discard queued PCM so an interrupted/stale reply cannot continue playing."""
+        if self.output_source is not None:
+            try:
+                self.output_source.clear()
+            except Exception:
+                pass
+
+    def _interrupt_response(self):
+        """Invalidate and cancel the current response as soon as caller speech starts."""
+        self._response_generation += 1
+        task = self._active_response_task
+        if task and not task.done():
+            task.cancel()
+        self._active_response_task = None
+        self._clear_output()
+        self.tts_status = "Interrupted by caller"
+        if self.llm_status == "Generating response":
+            self.llm_status = "Interrupted by caller"
+
+    def _schedule_response(self, transcript: str, event: dict, classifier_result: dict | None = None):
+        """Run LLM/TTS outside the STT receiver so partial events remain responsive."""
+        self._response_generation += 1
+        generation = self._response_generation
+        previous = self._active_response_task
+        if previous and not previous.done():
+            previous.cancel()
+        self._clear_output()
+        self._active_response_task = asyncio.create_task(
+            self._process_final_transcript(
+                transcript, event, classifier_result=classifier_result, generation=generation
+            )
+        )
+
+    async def _process_final_transcript(self, transcript: str, event: dict, classifier_result: dict | None = None, generation: int | None = None):
+        generation = self._response_generation if generation is None else generation
         # Classify only the current finalized caller turn (single-turn inference).
         classifier_input = transcript
         self.last_classifier_input = classifier_input
@@ -394,6 +443,8 @@ class CloudVoiceAgent:
             self.llm_status = "Failed"
             self.pipeline_status = "LLM failed"
             return
+        if generation != self._response_generation or not self.running:
+            return
         # Map language labels to BakBak's supported locale codes.
         tts_language_by_label = {
             "hi-IN": "hi", "en-IN": "en", "pa-IN": "pa", "bn-IN": "bn",
@@ -424,11 +475,15 @@ class CloudVoiceAgent:
             self.tts_status = "Failed"
             self.pipeline_status = "BakBak failed"
             return
+        if generation != self._response_generation or not self.running:
+            return
         if not audio:
             self.error_stage = "BakBak TTS"
             self.error = "BakBak returned empty audio"
             self.tts_status = "Failed — empty audio"
             self.pipeline_status = "BakBak failed"
+            return
+        if generation != self._response_generation or not self.running:
             return
         try:
             self._enqueue_output(audio)
@@ -499,7 +554,7 @@ class CloudVoiceAgent:
             self.last_turn_buffer_decision = "TIMEOUT → FLUSH_AND_CLASSIFY"
             self.last_combined_turn_text = buffered
             self.live_transcript = buffered
-            await self._process_final_transcript(buffered, buffered_event)
+            self._schedule_response(buffered, buffered_event)
         except asyncio.CancelledError:
             return
 
