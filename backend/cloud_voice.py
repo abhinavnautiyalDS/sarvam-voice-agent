@@ -473,6 +473,9 @@ class CloudVoiceAgent:
             self.llm_status = "Failed — empty response"
             self.pipeline_status = "LLM failed"
             return
+        # A voice answer should not become a long monologue. Keep the text
+        # bounded even if the model ignores the concise-answer instruction.
+        response = self._limit_voice_response(response)
         self.last_assistant_text = response
         self._update_conversation_summary(transcript, response, effective_language_code)
         self.llm_status = "Completed"
@@ -507,6 +510,24 @@ class CloudVoiceAgent:
         self.tts_status = f"Ready — {len(audio):,} PCM bytes queued"
         self.pipeline_status = "Ready"
         self.stt_status = "Connected — waiting for speech"
+
+    @staticmethod
+    def _limit_voice_response(content: str) -> str:
+        """Apply a conservative spoken-answer cap after removing model reasoning."""
+        import re
+
+        text = re.sub(r"\\s+", " ", str(content or "")).strip()
+        max_chars = max(250, int(os.getenv("VOICE_MAX_ANSWER_CHARS", "850")))
+        max_sentences = max(2, min(int(os.getenv("VOICE_MAX_ANSWER_SENTENCES", "4")), 8))
+
+        # Split only at sentence-ending punctuation followed by whitespace.
+        sentences = re.split(r"(?<=[.!?])\\s+", text)
+        if len(sentences) > max_sentences:
+            text = " ".join(sentences[:max_sentences]).strip()
+        if len(text) > max_chars:
+            clipped = text[:max_chars].rsplit(" ", 1)[0].rstrip(" ,;:-")
+            text = clipped + ("…" if clipped else "")
+        return text
 
     @staticmethod
     def _extract_final_answer(content: str) -> str:
@@ -682,9 +703,14 @@ class CloudVoiceAgent:
                         f"Latest transcription: {user_text}"
                     )},
                 ],
-                "max_tokens": int(os.getenv("QWEN_MAX_TOKENS", "384")),
-                "temperature": float(os.getenv("QWEN_TEMPERATURE", "0.6")),
-                "chat_template_kwargs": {"enable_thinking": True},
+                # Voice-first defaults: keep answers short and avoid Qwen3 thinking
+                # overhead unless explicitly enabled for an experiment.
+                "max_tokens": max(64, min(int(os.getenv("QWEN_MAX_TOKENS", "128")), 256)),
+                "temperature": float(os.getenv("QWEN_TEMPERATURE", "0.3")),
+                "chat_template_kwargs": {
+                    "enable_thinking": os.getenv("QWEN_ENABLE_THINKING", "false").strip().lower()
+                    in {"1", "true", "yes", "on"}
+                },
             }
             async with httpx.AsyncClient(timeout=60) as client:
                 response = await client.post(
