@@ -530,9 +530,9 @@ class CloudVoiceAgent:
 
         # Keep only useful recent context. This is bounded memory, not a list
         # of prior messages or a transcript replay.
-        previous = self.conversation_summary.strip()
-        request = clean(user_text, 220)
-        outcome = clean(assistant_text, 220)
+        previous = self.conversation_summary.strip()[-420:]
+        request = clean(user_text, 180)
+        outcome = clean(assistant_text, 180)
         parts = ([previous] if previous else []) + [
             f"Current topic/request: {request}",
             f"Latest outcome: {outcome}",
