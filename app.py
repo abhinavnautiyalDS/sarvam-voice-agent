@@ -41,7 +41,7 @@ if "audio_sink" not in st.session_state:
 st.subheader("Model settings")
 with st.expander("Voice model settings", expanded=True):
     llm_model = st.selectbox(
-        "Sarvam LLM model",
+        "Fallback cloud LLM model (used when LLM_PROVIDER=sarvam)",
         ["sarvam-105b-conversations", "sarvam-105b", "Gemma 4 26B (Google)"],
         index=0,
         disabled=st.session_state.running,
@@ -62,6 +62,7 @@ with st.expander("Voice model settings", expanded=True):
         help="Select among the available multilingual BERT-Tiny checkpoints, including 4.4 from the realtime-v4.4 branch. The selected model is cached after its first download.",
     )
     st.caption(f"Selected classifier: {classifier_variant}")
+    st.caption("Active reasoning provider defaults to the self-hosted Qwen endpoint. Configure LLM_PROVIDER, QWEN_MODEL and QWEN_CHAT_COMPLETIONS_URL in the environment to override it.")
     st.info("Language classification uses the selected 12-label BERT-Tiny model (Indian language labels plus none).")
 
     turn_buffer_enabled = st.checkbox(
@@ -179,12 +180,24 @@ if st.button("Start voice agent", type="primary", disabled=st.session_state.runn
                 ". Set them in Streamlit Secrets or your .env file."
             )
 
+        qwen_key = configured_secret("QWEN_API_KEY", "EMPTY")
+        qwen_url = configured_secret(
+            "QWEN_CHAT_COMPLETIONS_URL",
+            "http://100.95.233.66:8081/v1/chat/completions",
+        )
+        qwen_model = configured_secret("QWEN_MODEL", "aura-qwen3-0.6b")
+        llm_provider = configured_secret("LLM_PROVIDER", "qwen")
+
         agent = CloudVoiceAgent(
             sarvam_key,
             bakbak_key,
             voice_id,
             output_source=pcm_output,
             llm_model=llm_model,
+            llm_provider=llm_provider,
+            qwen_api_key=qwen_key,
+            qwen_chat_completions_url=qwen_url,
+            qwen_model=qwen_model,
             gemma_api_key=gemma_key,
             tts_model=tts_model,
             classifier_enabled=True,
@@ -344,7 +357,9 @@ if st.session_state.running and agent is not None:
         else:
             st.caption(f"Classifier unavailable/disabled. Saaras metadata is shown separately for comparison. {classification.get('reason', '')}")
 
-        st.markdown("### 3. LLM response")
+        st.markdown("### 3. Reasoning model response")
+        st.caption(f"Effective language code: {agent.current_language_code} · source: {agent.last_effective_language_source}")
+        st.caption(f"Compact conversation summary: {agent.conversation_summary}")
         if agent.last_assistant_text:
             st.success(f"**Sarvam returned:** {agent.last_assistant_text}")
         else:
@@ -370,7 +385,7 @@ if st.session_state.running and agent is not None:
             f"↓\nSaaras STT: {agent.stt_status}\n"
             f"Transcript: {agent.last_user_text or '—'}\n"
             f"Classifier: {agent.classifier_status}\n"
-            f"↓\nSarvam LLM ({llm_model}): {agent.llm_status}\n"
+            f"↓\nReasoning provider ({llm_provider}): {agent.llm_status}\n"
             f"Response: {agent.last_assistant_text or '—'}\n"
             f"↓\nBakBak Raya ({tts_model}): {agent.tts_status}\n"
             f"Output bytes: {agent.output_bytes_pushed:,}",
