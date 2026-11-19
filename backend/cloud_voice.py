@@ -16,6 +16,13 @@ from backend.system_prompt import get_system_prompt
 from backend import knowledge_base
 
 
+OPENING_GREETINGS = {
+    "general": "Hi! I’m Aanya, your AI assistant. I can help answer questions and make things easier. What can I help you with today?",
+    "customer_service": "Hello! I’m Meera from customer support. I can help with questions, issues, and support requests. How may I help you today?",
+    "admission_counsellor": "Hello! I’m Arjun, your admission counsellor. I can guide you through courses, eligibility, fees, and the admission process. What would you like to know?",
+}
+
+
 class CloudVoiceAgent:
     """Bridge browser WebRTC audio to Sarvam STT/LLM and BakBak TTS."""
 
@@ -133,6 +140,7 @@ class CloudVoiceAgent:
         self.current_language_code = "hi-IN"
         self.last_effective_language_code = "hi-IN"
         self.last_effective_language_source = "default"
+        self._opening_greeting_started = False
         self._response_generation += 1
         if self._active_response_task and not self._active_response_task.done():
             self._active_response_task.cancel()
@@ -255,6 +263,13 @@ class CloudVoiceAgent:
 
             if event_type == "session.begin":
                 self.stt_status = "Connected — waiting for speech"
+                if not self._opening_greeting_started:
+                    self._opening_greeting_started = True
+                    self._response_generation += 1
+                    generation = self._response_generation
+                    self._active_response_task = asyncio.create_task(
+                        self._play_opening_greeting(generation)
+                    )
             elif event_type == "transcript.partial":
                 partial = self._extract_transcript(event)
                 if partial:
@@ -510,6 +525,31 @@ class CloudVoiceAgent:
         self.tts_status = f"Ready — {len(audio):,} PCM bytes queued"
         self.pipeline_status = "Ready"
         self.stt_status = "Connected — waiting for speech"
+
+    async def _play_opening_greeting(self, generation: int):
+        """Speak one short agent introduction when the STT session begins."""
+        greeting = OPENING_GREETINGS.get(
+            self.agent_type, OPENING_GREETINGS["general"]
+        )
+        self.last_tts_input = greeting
+        self.tts_status = "Preparing opening greeting with BakBak Raya"
+        try:
+            audio = await self._get_bakbak_audio(greeting, language="en")
+            if generation != self._response_generation or not self.running:
+                return
+            if not audio:
+                raise ValueError("BakBak returned empty opening-greeting audio")
+            await self._enqueue_output(audio, generation=generation)
+            if generation == self._response_generation and self.running:
+                self.tts_status = f"Ready — opening greeting ({len(audio):,} PCM bytes queued)"
+                self.pipeline_status = "Ready"
+                self.stt_status = "Connected — waiting for speech"
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.error_stage = "Opening greeting / BakBak TTS"
+            self.error = f"{type(exc).__name__}: {exc}"
+            self.tts_status = "Opening greeting failed"
 
     @staticmethod
     def _limit_voice_response(content: str) -> str:
