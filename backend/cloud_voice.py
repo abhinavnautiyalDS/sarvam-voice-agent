@@ -17,9 +17,10 @@ from backend import knowledge_base
 
 
 OPENING_GREETINGS = {
+    # Frontend agent IDs: general, customer_service (Admission Counsellor), tutor.
     "general": "Hi! I’m Aanya, your AI assistant. I can help answer questions and make things easier. What can I help you with today?",
-    "customer_service": "Hello! I’m Meera from customer support. I can help with questions, issues, and support requests. How may I help you today?",
-    "admission_counsellor": "Hello! I’m Arjun, your admission counsellor. I can guide you through courses, eligibility, fees, and the admission process. What would you like to know?",
+    "customer_service": "Hello! I’m Arjun, your admission counsellor. I can guide you through courses, eligibility, fees, and the admission process. What would you like to know?",
+    "tutor": "Hi! I’m Aanya, your AI tutor. I can explain concepts, work through examples, and help you practise. What would you like to learn today?",
 }
 
 
