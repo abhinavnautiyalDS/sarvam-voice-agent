@@ -762,7 +762,10 @@ class CloudVoiceAgent:
                     },
                     json=qwen_payload,
                 )
-                response.raise_for_status()
+                if response.is_error:
+                    raise RuntimeError(
+                        f"Qwen HTTP {response.status_code}: {response.text[:2000]}"
+                    )
                 data = response.json()
             self.llm_latency_ms = round((time.perf_counter() - started) * 1000, 1)
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
