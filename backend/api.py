@@ -236,6 +236,11 @@ def _snapshot(agent: CloudVoiceAgent) -> dict:
         "error_stage": agent.error_stage,
         "llm_provider": agent.llm_provider,
         "audio_frames_received": agent.audio_frames_received,
+        "audio_bytes_received": agent.audio_bytes_received,
+        "audio_bytes_sent": agent.audio_bytes_sent,
+        "audio_chunks_dropped": agent.audio_chunks_dropped,
+        "last_stt_event": agent.last_stt_event,
+        "last_stt_raw": agent.last_stt_raw,
     }
 
 
