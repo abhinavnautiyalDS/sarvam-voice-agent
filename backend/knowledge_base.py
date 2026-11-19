@@ -244,6 +244,8 @@ def retrieve(agent_id: str, query: str, top_k: int = 4) -> list[dict[str, Any]]:
     agent = _agent_id(agent_id)
     if not query or not query.strip():
         return []
+    # Avoid a paid/remote embedding request when the KB is disabled or empty.
+    # This is especially important for agents such as "general" that have no documents.
     with _LOCKS[agent]:
         conn = _connect(agent)
         try:
@@ -251,6 +253,11 @@ def retrieve(agent_id: str, query: str, top_k: int = 4) -> list[dict[str, Any]]:
                 "SELECT value FROM settings WHERE key='enabled'"
             ).fetchone()["value"] == "true"
             if not enabled:
+                return []
+            chunk_count = conn.execute(
+                "SELECT COUNT(*) AS n FROM chunks"
+            ).fetchone()["n"]
+            if chunk_count == 0:
                 return []
         finally:
             conn.close()
