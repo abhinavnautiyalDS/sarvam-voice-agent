@@ -14,6 +14,12 @@ export type AuraVoiceState = {
   error?: string;
   error_stage?: string;
   llm_provider?: string;
+  audio_frames_received?: number;
+  audio_bytes_received?: number;
+  audio_bytes_sent?: number;
+  audio_chunks_dropped?: number;
+  last_stt_event?: string;
+  last_stt_raw?: string;
 };
 
 type VoiceClientOptions = {
