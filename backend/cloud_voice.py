@@ -790,8 +790,11 @@ class CloudVoiceAgent:
                 "max_tokens": max(64, min(int(os.getenv("QWEN_MAX_TOKENS", "128")), 256)),
                 "temperature": float(os.getenv("QWEN_TEMPERATURE", "0.3")),
                 "chat_template_kwargs": {
-                    "enable_thinking": os.getenv("QWEN_ENABLE_THINKING", "false").strip().lower()
-                    in {"1", "true", "yes", "on"}
+                    # Never stream private reasoning into the caller's TTS audio.
+                    "enable_thinking": False if on_text_chunk is not None else (
+                        os.getenv("QWEN_ENABLE_THINKING", "false").strip().lower()
+                        in {"1", "true", "yes", "on"}
+                    )
                 },
             }
 
