@@ -595,7 +595,10 @@ class CloudVoiceAgent:
     async def _get_llm_response(
         self, user_text: str, detected_language: str = "unknown", classifier_result: dict | None = None
     ) -> str:
-        self.last_llm_input = user_text
+        self.last_llm_input = (
+            f"Current language code: {self.current_language_code}\n"
+            f"Latest transcription: {user_text}"
+        )
         started = time.perf_counter()
         url = os.getenv("SARVAM_LLM_URL", "https://api.sarvam.ai/v1/chat/completions")
         headers = {
