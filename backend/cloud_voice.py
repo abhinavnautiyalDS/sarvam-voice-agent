@@ -525,8 +525,6 @@ class CloudVoiceAgent:
         response = self._limit_voice_response(response)
         self.last_assistant_text = response
         self._update_conversation_summary(transcript, response, effective_language_code)
-        self.last_assistant_text = response
-        self._update_conversation_summary(transcript, response, effective_language_code)
 
         if streamed_tts:
             # Audio was synthesized and queued concurrently with Qwen generation.
@@ -842,7 +840,7 @@ class CloudVoiceAgent:
                             # clauses so the TTS request does not wait for the full turn.
                             while pending_text:
                                 import re
-                                boundary = re.search(r"[.!?।](?:\\s|$)", pending_text)
+                                boundary = re.search(r"[.!?।](?:\s|$)", pending_text)
                                 cut = boundary.end() if boundary else 0
                                 if not cut and len(pending_text) >= 180:
                                     split_at = pending_text.rfind(" ", 0, 180)
