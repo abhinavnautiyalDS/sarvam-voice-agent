@@ -727,7 +727,6 @@ class CloudVoiceAgent:
         import av
         if self._input_resampler is None:
             self._input_resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
-        self.audio_frames_received += 1
         for converted in self._input_resampler.resample(frame):
             pcm = converted.to_ndarray().astype(np.int16).tobytes()
             self.push_audio(pcm)
