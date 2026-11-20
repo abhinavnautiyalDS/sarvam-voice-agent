@@ -205,6 +205,52 @@ async def knowledge_index_sources(request: Request, agent: str = "general"):
     }
 
 
+@app.get("/api/integrations/status")
+async def integrations_status():
+    """Return a read-only snapshot of configured AURA integrations."""
+    config = public_config()
+    model_dir = Path(__file__).resolve().parents[1] / "models/ml/bert_tiny_e2_multilingual4.4"
+    try:
+        kb = knowledge_base.status("general")
+        knowledge = {
+            "available": True,
+            "enabled": kb["enabled"],
+            "documents": kb["documents"],
+            "chunks": kb["chunks"],
+            "embedding_model": kb["embedding_model"],
+            "dimensions": kb["dimensions"],
+            "index_exists": Path(kb["index"]).is_file(),
+        }
+    except Exception:
+        knowledge = {"available": False}
+    return {
+        "backend": {"status": "ok"},
+        "voice_transport": {
+            "route_available": any(getattr(route, "path", None) == "/ws/voice" for route in app.routes)
+        },
+        "sarvam": {
+            "credentials_configured": bool(config.get("sarvam_api_key_set")),
+            "stt_mode": config.get("sarvam_stt_mode", "verbose"),
+        },
+        "bakbak": {
+            "credentials_configured": bool(config.get("bakbak_api_key_set")),
+            "voice_id_configured": bool(config.get("bakbak_voice_id_set")),
+        },
+        "classifier": {
+            "model": "BERT-Tiny multilingual 4.4",
+            "labels": 12,
+            "files_present": all((model_dir / filename).is_file() for filename in ("config.json", "model.safetensors", "tokenizer.json")),
+        },
+        "qwen": {
+            "model": get_setting("AURA_QWEN_MODEL", "aura-qwen3-0.6b"),
+            "endpoint_configured": bool(get_setting("AURA_QWEN_CHAT_COMPLETIONS_URL", "http://100.95.233.66:8081/v1/chat/completions")),
+            "credentials_configured": bool(get_setting("QWEN_API_KEY", "")),
+        },
+        "knowledge": knowledge,
+        "session_memory": {"mode": "ephemeral", "isolated_per_voice_connection": True},
+    }
+
+
 @app.get("/api/health")
 async def health():
     return {
