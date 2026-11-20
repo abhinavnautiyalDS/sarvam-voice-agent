@@ -510,6 +510,11 @@ class CloudVoiceAgent:
         self.conversation_turns.append(turn)
         self.conversation_history.append({"role": "user", "content": transcript})
         self.last_assistant_text = ""
+        self.last_kb_status = "pending"
+        self.last_kb_used = False
+        self.last_kb_chunks = 0
+        self.last_kb_agent = self.agent_type
+        self.last_kb_titles = []
 
         streamed_tts = False
         self.llm_status = "Generating response"
