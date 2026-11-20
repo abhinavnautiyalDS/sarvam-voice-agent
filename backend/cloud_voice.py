@@ -139,6 +139,7 @@ class CloudVoiceAgent:
         self.last_stt_raw = ""
         self.last_detected_language = ""
         self.last_classifier_input = ""
+        self.last_assistant_text = ""
         self.turn_buffer_text = ""
         self.turn_buffer_event = {}
         self.last_turn_buffer_decision = ""
@@ -880,8 +881,31 @@ class CloudVoiceAgent:
             })
         prompt_context += knowledge_context
         conversation_messages = list(getattr(self, "conversation_history", []))
-        if not conversation_messages or conversation_messages[-1].get("content") != user_text:
+        if (
+            not conversation_messages
+            or conversation_messages[-1].get("role") != "user"
+            or conversation_messages[-1].get("content") != user_text
+        ):
             conversation_messages.append({"role": "user", "content": user_text})
+
+        if self.agent_type == "customer_service" and self.last_kb_status in {
+            "disabled", "empty", "no_match", "unavailable"
+        }:
+            prompt_context += (
+                f"\n\nADMISSION_KB_STATUS: {self.last_kb_status.upper()}. "
+                "The required admission or programme facts were not retrieved for this turn. "
+                "Do not guess course availability, fees, duration, eligibility, dates, or policies. "
+                "Explain that the specific detail cannot be verified from the available information."
+            )
+        elif self.agent_type == "tutor" and self.last_kb_status in {
+            "disabled", "empty", "no_match", "unavailable"
+        }:
+            prompt_context += (
+                f"\n\nCOURSE_KB_STATUS: {self.last_kb_status.upper()}. "
+                "Do not invent institution-specific syllabus or course details. "
+                "You may still explain general concepts and clearly label them as general knowledge."
+            )
+
         max_tokens = int(os.getenv("SARVAM_LLM_MAX_TOKENS", "120"))
 
         if self.llm_provider == "qwen":
