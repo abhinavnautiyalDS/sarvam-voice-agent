@@ -73,3 +73,10 @@
 .conversation-turn>footer{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding-top:9px;border-top:1px solid #1d3b5c;font-size:8px;color:#829bb9}
 .conversation-turn>footer .kb-used{color:#64e0bd}
 .conversation-turn>footer .kb-not-used{color:#d9bf7b}
+
+/* Keep the Start/Stop controls centered while New conversation stays on the right. */
+.voice-actions{display:grid;grid-template-columns:1fr auto auto 1fr;align-items:center;gap:9px}
+.voice-actions .main-action{grid-column:2;justify-self:end}
+.voice-actions .square-action{grid-column:3}
+.voice-actions .text-btn{grid-column:4;justify-self:end;margin-left:0;white-space:nowrap}
+@media(max-width:420px){.voice-actions{grid-template-columns:1fr auto auto}.voice-actions .main-action{grid-column:1;justify-self:end}.voice-actions .square-action{grid-column:2}.voice-actions .text-btn{grid-column:3}}
