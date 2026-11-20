@@ -9,6 +9,25 @@ export type AuraVoiceState = {
   confidence?: number | null;
   classifier_latency_ms?: number | null;
   assistant_text?: string;
+  conversation_turns?: Array<{
+    id: number;
+    user: string;
+    assistant: string;
+    status: string;
+    language?: string;
+    kb_status?: string;
+    kb_used?: boolean;
+    kb_chunks?: number;
+    kb_agent?: string;
+    kb_titles?: string[];
+    time?: string;
+  }>;
+  kb_status?: string;
+  kb_used?: boolean;
+  kb_chunks?: number;
+  kb_agent?: string;
+  kb_titles?: string[];
+  reasoning_model?: string;
   llm_latency_ms?: number | null;
   tts_latency_ms?: number | null;
   error?: string;
