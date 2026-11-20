@@ -56,3 +56,20 @@
 @media(max-width:1100px){.kb-process-steps{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.kb-process-arrow{display:none}.kb-process-steps article{min-height:145px}}
 @media(max-width:650px){.kb-process-demo{padding:14px}.kb-process-heading{flex-direction:column;gap:9px}.kb-process-heading h3{font-size:14px}.kb-process-steps{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.kb-process-steps article{min-height:148px;padding:11px 9px}.kb-process-steps article>b{font-size:8px}.kb-process-steps article>p{font-size:7px}.kb-process-note{align-items:flex-start}}
 @media(prefers-reduced-motion:no-preference){.kb-process-steps article{transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease}.kb-process-steps article:hover{transform:translateY(-3px);border-color:#4c9bc0;box-shadow:0 10px 24px #0003}}
+
+
+/* Full, live per-turn conversation transcript */
+.conversation-turns{display:grid;gap:12px;margin-top:14px;max-height:520px;overflow:auto;padding-right:4px}
+.conversation-turn{border:1px solid #24496f;border-radius:10px;background:#091a32;padding:13px}
+.conversation-turn>header{display:flex;align-items:center;gap:10px;padding-bottom:9px;border-bottom:1px solid #1d3b5c}
+.conversation-turn>header b{font-size:10px;color:#dcecff}
+.conversation-turn>header span{font:8px 'DM Mono';color:#8199b8}
+.conversation-turn>header em{margin-left:auto;font:8px 'DM Mono';font-style:normal;color:#85dafa}
+.conversation-message{margin-top:10px;padding:10px 11px;border-radius:8px}
+.conversation-message small{font:7px 'DM Mono';letter-spacing:.1em;color:#8ca6c7}
+.conversation-message p{font-size:10px;line-height:1.7;color:#e0edff;margin:5px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.conversation-message.caller{background:#102744;border:1px solid #294e73}
+.conversation-message.assistant{background:#102d32;border:1px solid #28645f}
+.conversation-turn>footer{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding-top:9px;border-top:1px solid #1d3b5c;font-size:8px;color:#829bb9}
+.conversation-turn>footer .kb-used{color:#64e0bd}
+.conversation-turn>footer .kb-not-used{color:#d9bf7b}
