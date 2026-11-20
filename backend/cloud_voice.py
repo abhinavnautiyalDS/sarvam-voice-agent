@@ -658,6 +658,26 @@ class CloudVoiceAgent:
                 raise ValueError("BakBak returned empty opening-greeting audio")
             await self._enqueue_output(audio, generation=generation)
             if generation == self._response_generation and self.running:
+                if not self.conversation_turns:
+                    self.turn_counter += 1
+                    greeting_turn = {
+                        "id": self.turn_counter,
+                        "user": "",
+                        "assistant": greeting,
+                        "status": "completed",
+                        "language": "en-IN",
+                        "kb_status": "not_needed",
+                        "kb_used": False,
+                        "kb_chunks": 0,
+                        "kb_agent": self.agent_type,
+                        "kb_titles": [],
+                        "time": time.strftime("%H:%M:%S"),
+                        "kind": "greeting",
+                    }
+                    self.conversation_turns.append(greeting_turn)
+                    self.conversation_history.append(
+                        {"role": "assistant", "content": greeting}
+                    )
                 self.tts_status = f"Ready — opening greeting ({len(audio):,} PCM bytes queued)"
                 self.pipeline_status = "Ready"
                 self.stt_status = "Connected — waiting for speech"
