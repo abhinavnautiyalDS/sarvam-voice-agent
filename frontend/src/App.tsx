@@ -16,7 +16,7 @@ const stages=[
 {n:'02',name:'Speech to text',sub:'Sarvam Saaras',detail:'Speech is transcribed into text.',icon:AudioLines,color:'blue'},
 {n:'03',name:'Language classifier',sub:'Custom BERT-Tiny · 12 labels',detail:'Predicts the language/script category for this utterance.',icon:BrainCircuit,color:'violet'},
 {n:'04',name:'Knowledge Base',sub:'Optional FAISS lookup',detail:'When enabled, embeds the query and retrieves the most relevant stored chunks.',icon:Network,color:'teal'},
-{n:'05',name:'LLM reasoning',sub:'Hosted Qwen3-0.6B',detail:'Hosted Qwen3-0.6B responds from model knowledge, with retrieved context only when needed.',icon:Cpu,color:'blue'},
+{n:'05',name:'LLM reasoning',sub:'Dhīr 2B · private EC2',detail:'Dhīr 2B responds from model knowledge, with passages retrieved from the selected agent knowledge base when available.',icon:Cpu,color:'blue'},
 {n:'06',name:'Speech generation',sub:'BakBak Raya TTS',detail:'Converts the final response into speech.',icon:Volume2,color:'violet'}
 ];
 export default function App(){
