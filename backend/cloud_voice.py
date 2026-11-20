@@ -774,6 +774,43 @@ class CloudVoiceAgent:
                 return value.strip()
         return ""
 
+    def _should_use_knowledge_base(self, user_text: str) -> bool:
+        """Avoid KB retrieval for turns that do not need agent-specific facts."""
+        text = (user_text or "").lower()
+
+        if self.agent_type == "customer_service":
+            admission_terms = (
+                "admission", "admissions", "eligibility", "eligible",
+                "application process", "how to apply", "apply for",
+                "scholarship", "tuition fee", "fees", "cutoff",
+                "cut-off", "deadline", "required documents",
+                "dv university", "university admission",
+                "university fees", "university course",
+            )
+            return any(term in text for term in admission_terms)
+
+        if self.agent_type == "tutor":
+            course_terms = (
+                "syllabus", "curriculum", "lesson material",
+                "course material", "study material", "course outline",
+                "learning path", "chapter in the course",
+                "module in the course", "assignment in the course",
+                "what does the course cover",
+            )
+            return any(term in text for term in course_terms)
+
+        if self.agent_type == "general":
+            organisation_terms = (
+                "our company", "our product", "our service",
+                "our organisation", "our organization",
+                "company policy", "product features",
+                "internal process", "project documentation",
+                "our pricing", "our refund policy",
+            )
+            return any(term in text for term in organisation_terms)
+
+        return False
+
     async def _get_llm_response(
         self,
         user_text: str,
@@ -834,43 +871,53 @@ class CloudVoiceAgent:
             "to understand references, preferences, decisions, and follow-up questions. "
             "The latest user message is the current request. Never invent missing facts."
         )
-        # Record exactly whether this turn retrieved any passages from this agent's KB.
+        # Selective retrieval avoids embedding calls on ordinary conversational turns.
+        # Telemetry is recorded for every turn, including turns that do not need RAG.
         knowledge_context = ""
-        self.last_kb_status = "disabled"
+        self.last_kb_status = "not_needed"
         self.last_kb_used = False
         self.last_kb_chunks = 0
         self.last_kb_agent = self.agent_type
         self.last_kb_titles = []
-        try:
-            kb_status = await asyncio.to_thread(knowledge_base.status, self.agent_type)
-            if not kb_status.get("enabled"):
-                self.last_kb_status = "disabled"
-            elif int(kb_status.get("chunks", 0)) <= 0:
-                self.last_kb_status = "empty"
-            else:
-                passages = await asyncio.to_thread(
-                    knowledge_base.retrieve, self.agent_type, user_text, 4
+
+        if self._should_use_knowledge_base(user_text):
+            try:
+                kb_status = await asyncio.to_thread(
+                    knowledge_base.status, self.agent_type
                 )
-                if passages:
-                    self.last_kb_status = "used"
-                    self.last_kb_used = True
-                    self.last_kb_chunks = len(passages)
-                    self.last_kb_titles = list(dict.fromkeys(
-                        str(item.get("title", "Untitled")) for item in passages
-                    ))
-                    formatted = "\n\n".join(
-                        f"[{item['title']}]\n{item['content']}" for item in passages
-                    )
-                    knowledge_context = (
-                        "\n\nKnowledge Base context (use only if relevant; do not invent facts):\n"
-                        + formatted
-                        + "\nIf the supplied passages do not answer the question, say so plainly."
-                    )
+                if not kb_status.get("enabled"):
+                    self.last_kb_status = "disabled"
+                elif int(kb_status.get("chunks", 0)) <= 0:
+                    self.last_kb_status = "empty"
                 else:
-                    self.last_kb_status = "no_match"
-        except Exception as exc:
-            self.last_kb_status = "unavailable"
-            self.error = f"Knowledge Base unavailable: {type(exc).__name__}: {exc}"
+                    passages = await asyncio.to_thread(
+                        knowledge_base.retrieve, self.agent_type, user_text, 4
+                    )
+                    if passages:
+                        self.last_kb_status = "used"
+                        self.last_kb_used = True
+                        self.last_kb_chunks = len(passages)
+                        self.last_kb_titles = list(dict.fromkeys(
+                            str(item.get("title", "Untitled")) for item in passages
+                        ))
+                        formatted = "\n\n".join(
+                            f"[{item['title']}]\n{item['content']}" for item in passages
+                        )
+                        knowledge_context = (
+                            "\n\nKnowledge Base context "
+                            "(use only relevant information; do not invent facts):\n"
+                            + formatted
+                            + "\nIf these passages do not answer the question, "
+                            "say so plainly."
+                        )
+                    else:
+                        self.last_kb_status = "no_match"
+            except Exception as exc:
+                self.last_kb_status = "unavailable"
+                self.error = (
+                    f"Knowledge Base unavailable: {type(exc).__name__}: {exc}"
+                )
+
         current_turn = next(
             (item for item in reversed(getattr(self, "conversation_turns", []))
              if item.get("id") == getattr(self, "active_turn_id", None)),
@@ -884,6 +931,7 @@ class CloudVoiceAgent:
                 "kb_agent": self.last_kb_agent,
                 "kb_titles": self.last_kb_titles,
             })
+
         prompt_context += knowledge_context
         conversation_messages = list(getattr(self, "conversation_history", []))
         if (
@@ -893,23 +941,31 @@ class CloudVoiceAgent:
         ):
             conversation_messages.append({"role": "user", "content": user_text})
 
-        if self.agent_type == "customer_service" and self.last_kb_status in {
-            "disabled", "empty", "no_match", "unavailable"
-        }:
-            prompt_context += (
-                f"\n\nADMISSION_KB_STATUS: {self.last_kb_status.upper()}. "
-                "The required admission or programme facts were not retrieved for this turn. "
-                "Do not guess course availability, fees, duration, eligibility, dates, or policies. "
-                "Explain that the specific detail cannot be verified from the available information."
-            )
-        elif self.agent_type == "tutor" and self.last_kb_status in {
-            "disabled", "empty", "no_match", "unavailable"
-        }:
-            prompt_context += (
-                f"\n\nCOURSE_KB_STATUS: {self.last_kb_status.upper()}. "
-                "Do not invent institution-specific syllabus or course details. "
-                "You may still explain general concepts and clearly label them as general knowledge."
-            )
+        if self.last_kb_status in {"disabled", "empty", "no_match", "unavailable"}:
+            if self.agent_type == "customer_service":
+                prompt_context += (
+                    f"\n\nADMISSION_KB_STATUS: {self.last_kb_status.upper()}. "
+                    "The requested institution-specific information was not retrieved. "
+                    "Do not guess course availability, fees, duration, eligibility, dates, "
+                    "deadlines, required documents, scholarships, or policies. Explain "
+                    "that the specific detail cannot be verified from the available "
+                    "information and suggest contacting the admissions office."
+                )
+            elif self.agent_type == "tutor":
+                prompt_context += (
+                    f"\n\nCOURSE_KB_STATUS: {self.last_kb_status.upper()}. "
+                    "Do not invent institution-specific syllabus or course details. "
+                    "You may still explain general concepts and clearly label them as "
+                    "general knowledge."
+                )
+            elif self.agent_type == "general":
+                prompt_context += (
+                    f"\n\nORGANISATION_KB_STATUS: {self.last_kb_status.upper()}. "
+                    "The requested organisation-specific information was not retrieved. "
+                    "Do not guess or invent company, product, service, pricing, refund, "
+                    "or internal-policy facts. Clearly say that the specific information "
+                    "is not available or cannot be verified right now."
+                )
 
         max_tokens = int(os.getenv("SARVAM_LLM_MAX_TOKENS", "120"))
 
