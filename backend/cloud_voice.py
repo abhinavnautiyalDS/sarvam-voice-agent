@@ -74,10 +74,17 @@ class CloudVoiceAgent:
         self.last_combined_turn_text = ""
         self.current_response_language = "hindi"
         self.current_language_code = "hi-IN"
-        # Store language codes per turn only; never retain raw transcript history.
         self.language_history = []
-        # Compact session summary is bounded and updated locally (no extra LLM call).
-        self.conversation_summary = ""
+        # Keep the complete in-memory session transcript for multi-turn reasoning.
+        self.conversation_history = []
+        self.conversation_turns = []
+        self.turn_counter = 0
+        self.active_turn_id = None
+        self.last_kb_status = "not_checked"
+        self.last_kb_used = False
+        self.last_kb_chunks = 0
+        self.last_kb_agent = agent_type
+        self.last_kb_titles = []
         self.last_classifier_input = ""
         self.last_effective_language_code = "hi-IN"
         self.last_effective_language_source = "default"
@@ -137,7 +144,15 @@ class CloudVoiceAgent:
         self.last_turn_buffer_decision = ""
         self.last_combined_turn_text = ""
         self.language_history = []
-        self.conversation_summary = ""
+        self.conversation_history = []
+        self.conversation_turns = []
+        self.turn_counter = 0
+        self.active_turn_id = None
+        self.last_kb_status = "not_checked"
+        self.last_kb_used = False
+        self.last_kb_chunks = 0
+        self.last_kb_agent = self.agent_type
+        self.last_kb_titles = []
         self.current_language_code = "hi-IN"
         self.last_effective_language_code = "hi-IN"
         self.last_effective_language_source = "default"
@@ -473,6 +488,28 @@ class CloudVoiceAgent:
             "en" if self.current_response_language == "english" else "hi",
         )
 
+        # Start a durable-in-session turn record before generation so the UI can
+        # show the caller's turn immediately and update the answer as it streams.
+        self.turn_counter += 1
+        turn_id = self.turn_counter
+        self.active_turn_id = turn_id
+        turn = {
+            "id": turn_id,
+            "user": transcript,
+            "assistant": "",
+            "status": "processing",
+            "language": effective_language_code,
+            "kb_status": "pending",
+            "kb_used": False,
+            "kb_chunks": 0,
+            "kb_agent": self.agent_type,
+            "kb_titles": [],
+            "time": time.strftime("%H:%M:%S"),
+        }
+        self.conversation_turns.append(turn)
+        self.conversation_history.append({"role": "user", "content": transcript})
+        self.last_assistant_text = ""
+
         streamed_tts = False
         self.llm_status = "Generating response"
         try:
@@ -484,10 +521,23 @@ class CloudVoiceAgent:
                 tts_worker = asyncio.create_task(
                     self._consume_streaming_tts(tts_queue, tts_language, generation)
                 )
+                async def publish_streamed_chunk(chunk: str):
+                    current_turn = next(
+                        (item for item in reversed(self.conversation_turns) if item["id"] == turn_id),
+                        None,
+                    )
+                    self.last_assistant_text = (
+                        f"{self.last_assistant_text} {chunk}".strip()
+                    )
+                    if current_turn is not None:
+                        current_turn["assistant"] = self.last_assistant_text
+                        current_turn["status"] = "streaming"
+                    await tts_queue.put(chunk)
+
                 try:
                     response = await self._get_llm_response(
                         transcript, detected_language, result,
-                        on_text_chunk=tts_queue.put,
+                        on_text_chunk=publish_streamed_chunk,
                     )
                 except Exception:
                     await tts_queue.put(None)
@@ -502,8 +552,28 @@ class CloudVoiceAgent:
             else:
                 response = await self._get_llm_response(transcript, detected_language, result)
         except asyncio.CancelledError:
+            current_turn = next(
+                (item for item in reversed(self.conversation_turns) if item["id"] == turn_id),
+                None,
+            )
+            if current_turn is not None:
+                current_turn["status"] = "interrupted"
+                current_turn["assistant"] = self.last_assistant_text
+            if self.last_assistant_text:
+                self.conversation_history.append(
+                    {"role": "assistant", "content": self.last_assistant_text}
+                )
+            self.active_turn_id = None
             raise
         except Exception as exc:
+            current_turn = next(
+                (item for item in reversed(self.conversation_turns) if item["id"] == turn_id),
+                None,
+            )
+            if current_turn is not None:
+                current_turn["status"] = "failed"
+                current_turn["assistant"] = self.last_assistant_text
+            self.active_turn_id = None
             self.error_stage = "LLM" if not streamed_tts else "Streaming LLM/TTS"
             self.error = f"{type(exc).__name__}: {exc}"
             self.llm_status = "Failed"
@@ -524,7 +594,15 @@ class CloudVoiceAgent:
         # bounded even if the model ignores the concise-answer instruction.
         response = self._limit_voice_response(response)
         self.last_assistant_text = response
-        self._update_conversation_summary(transcript, response, effective_language_code)
+        current_turn = next(
+            (item for item in reversed(self.conversation_turns) if item["id"] == turn_id),
+            None,
+        )
+        if current_turn is not None:
+            current_turn["assistant"] = response
+            current_turn["status"] = "completed"
+        self.conversation_history.append({"role": "assistant", "content": response})
+        self.active_turn_id = None
 
         if streamed_tts:
             # Audio was synthesized and queued concurrently with Qwen generation.
@@ -617,28 +695,6 @@ class CloudVoiceAgent:
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL)
         text = re.sub(r"^\s*</?think>\s*", "", text, flags=re.IGNORECASE)
         return text.strip()
-
-    def _update_conversation_summary(self, user_text: str, assistant_text: str, language_code: str):
-        """Maintain compact session memory, not a replay of the conversation."""
-        import re
-
-        def clean(value: str, limit: int) -> str:
-            value = re.sub(r"\s+", " ", str(value or "")).strip()
-            if len(value) > limit:
-                value = value[: limit - 1].rsplit(" ", 1)[0] + "…"
-            return value
-
-        # Keep only useful recent context. This is bounded memory, not a list
-        # of prior messages or a transcript replay.
-        previous = self.conversation_summary.strip()[-420:]
-        request = clean(user_text, 180)
-        outcome = clean(assistant_text, 180)
-        parts = ([previous] if previous else []) + [
-            f"Current topic/request: {request}",
-            f"Latest outcome: {outcome}",
-            f"Active response language: {language_code}",
-        ]
-        self.conversation_summary = clean(" | ".join(parts), 900)
 
     @staticmethod
     def _is_meaningful_short_turn(text: str) -> bool:
@@ -744,34 +800,68 @@ class CloudVoiceAgent:
             f"{classifier_confidence_value if classifier_confidence_value is not None else 'N/A'}; "
             f"language source: {getattr(self, 'last_effective_language_source', 'unknown')}."
         )
-        summary = getattr(self, "conversation_summary", "") or "No prior conversation summary."
         prompt_context = (
             f"{system_prompt}\n\n"
-            f"CONVERSATION SUMMARY (compact memory, not full chat history): {summary}\n\n"
             f"CURRENT TURN LANGUAGE: {language_names.get(effective_language_code, current_language)} "
             f"({effective_language_code}).\n{language_instruction}\n{language_hint}\n"
-            "Treat the current user message as the only new request. Use the summary only for "
-            "relevant continuity. Do not reproduce the summary."
+            "Use the complete conversation messages supplied after this system instruction "
+            "to understand references, preferences, decisions, and follow-up questions. "
+            "The latest user message is the current request. Never invent missing facts."
         )
-        # Retrieval is globally disabled by default. When enabled, retrieve a few
-        # relevant chunks and pass them as grounding context; embedding calls run
-        # off the asyncio event loop.
+        # Record exactly whether this turn retrieved any passages from this agent's KB.
         knowledge_context = ""
+        self.last_kb_status = "disabled"
+        self.last_kb_used = False
+        self.last_kb_chunks = 0
+        self.last_kb_agent = self.agent_type
+        self.last_kb_titles = []
         try:
-            passages = await asyncio.to_thread(knowledge_base.retrieve, self.agent_type, user_text, 4)
-            if passages:
-                formatted = "\n\n".join(
-                    f"[{item['title']}]\n{item['content']}" for item in passages
+            kb_status = await asyncio.to_thread(knowledge_base.status, self.agent_type)
+            if not kb_status.get("enabled"):
+                self.last_kb_status = "disabled"
+            elif int(kb_status.get("chunks", 0)) <= 0:
+                self.last_kb_status = "empty"
+            else:
+                passages = await asyncio.to_thread(
+                    knowledge_base.retrieve, self.agent_type, user_text, 4
                 )
-                knowledge_context = (
-                    "\n\nKnowledge Base context (use only if relevant; do not invent facts):\n"
-                    + formatted
-                    + "\nIf the supplied passages do not answer the question, say so plainly."
-                )
+                if passages:
+                    self.last_kb_status = "used"
+                    self.last_kb_used = True
+                    self.last_kb_chunks = len(passages)
+                    self.last_kb_titles = list(dict.fromkeys(
+                        str(item.get("title", "Untitled")) for item in passages
+                    ))
+                    formatted = "\n\n".join(
+                        f"[{item['title']}]\n{item['content']}" for item in passages
+                    )
+                    knowledge_context = (
+                        "\n\nKnowledge Base context (use only if relevant; do not invent facts):\n"
+                        + formatted
+                        + "\nIf the supplied passages do not answer the question, say so plainly."
+                    )
+                else:
+                    self.last_kb_status = "no_match"
         except Exception as exc:
-            # KB outages must not take down the voice pipeline.
+            self.last_kb_status = "unavailable"
             self.error = f"Knowledge Base unavailable: {type(exc).__name__}: {exc}"
+        current_turn = next(
+            (item for item in reversed(getattr(self, "conversation_turns", []))
+             if item.get("id") == getattr(self, "active_turn_id", None)),
+            None,
+        )
+        if current_turn is not None:
+            current_turn.update({
+                "kb_status": self.last_kb_status,
+                "kb_used": self.last_kb_used,
+                "kb_chunks": self.last_kb_chunks,
+                "kb_agent": self.last_kb_agent,
+                "kb_titles": self.last_kb_titles,
+            })
         prompt_context += knowledge_context
+        conversation_messages = list(getattr(self, "conversation_history", []))
+        if not conversation_messages or conversation_messages[-1].get("content") != user_text:
+            conversation_messages.append({"role": "user", "content": user_text})
         max_tokens = int(os.getenv("SARVAM_LLM_MAX_TOKENS", "120"))
 
         if self.llm_provider == "qwen":
@@ -781,10 +871,7 @@ class CloudVoiceAgent:
                 "model": self.qwen_model,
                 "messages": [
                     {"role": "system", "content": prompt_context},
-                    {"role": "user", "content": (
-                        f"Current language code: {effective_language_code}\n"
-                        f"Latest transcription: {user_text}"
-                    )},
+                    *conversation_messages,
                 ],
                 # Keep Qwen concise and disable private reasoning for voice turns.
                 "max_tokens": max(64, min(int(os.getenv("QWEN_MAX_TOKENS", "128")), 256)),
@@ -908,10 +995,13 @@ class CloudVoiceAgent:
                 "systemInstruction": {
                     "parts": [{"text": prompt_context}]
                 },
-                "contents": [{
-                    "role": "user",
-                    "parts": [{"text": user_text}],
-                }],
+                "contents": [
+                    {
+                        "role": "model" if item.get("role") == "assistant" else "user",
+                        "parts": [{"text": item.get("content", "")}],
+                    }
+                    for item in conversation_messages
+                ],
                 "generationConfig": {
                     "maxOutputTokens": max_tokens,
                     "temperature": 0.4,
@@ -948,7 +1038,7 @@ class CloudVoiceAgent:
             "model": self.llm_model,
             "messages": [
                 {"role": "system", "content": prompt_context},
-                {"role": "user", "content": user_text},
+                *conversation_messages,
             ],
             "max_tokens": max_tokens,
         }
