@@ -17,6 +17,7 @@ DATA_ROOT = Path(os.getenv("AURA_KB_DATA_DIR", "data/knowledge_base"))
 EMBEDDING_URL = os.getenv("AURA_EMBEDDING_API_URL", "http://100.95.233.66:8080/embed").strip()
 EMBEDDING_MODEL = "granite-embedding-97m-multilingual-r2"
 DIMENSIONS = 384
+MIN_RELEVANCE_SCORE = 0.80
 CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 180
 EMBED_BATCH_SIZE = 16
@@ -274,7 +275,8 @@ def retrieve(agent_id: str, query: str, top_k: int = 4) -> list[dict[str, Any]]:
             return [
                 {"score": float(score), "content": rows[int(idx)]["content"],
                  "title": rows[int(idx)]["title"], "source": rows[int(idx)]["source"]}
-                for score, idx in zip(scores[0], ids[0]) if idx >= 0
+                for score, idx in zip(scores[0], ids[0])
+                if idx >= 0 and float(score) >= MIN_RELEVANCE_SCORE
             ]
         finally:
             conn.close()
