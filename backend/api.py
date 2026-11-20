@@ -230,6 +230,13 @@ def _snapshot(agent: CloudVoiceAgent) -> dict:
         "confidence": result.get("confidence"),
         "classifier_latency_ms": result.get("latency_ms"),
         "assistant_text": agent.last_assistant_text,
+        "conversation_turns": list(getattr(agent, "conversation_turns", [])),
+        "kb_status": getattr(agent, "last_kb_status", "not_checked"),
+        "kb_used": bool(getattr(agent, "last_kb_used", False)),
+        "kb_chunks": int(getattr(agent, "last_kb_chunks", 0)),
+        "kb_agent": getattr(agent, "last_kb_agent", agent.agent_type),
+        "kb_titles": list(getattr(agent, "last_kb_titles", [])),
+        "reasoning_model": "Dhīr 2B" if agent.llm_provider == "qwen" else agent.llm_model,
         "llm_latency_ms": agent.llm_latency_ms,
         "tts_latency_ms": agent.tts_latency_ms,
         "error": agent.error,
@@ -287,10 +294,35 @@ async def text_chat(request: Request):
     agent.qwen_model = get_setting("AURA_QWEN_MODEL", "aura-qwen3-0.6b")
     agent.gemma_api_key = get_setting("GEMINI_API_KEY", "") or get_setting("GEMMA_API_KEY", "") or None
     agent.current_response_language = language_by_label.get(label, "english")
+    agent.current_language_code = label if label in language_by_label else "en-IN"
+    agent.last_effective_language_source = "classifier" if label in language_by_label else "default"
     agent.previous_turn_context = None
     agent.last_llm_input = message.strip()
     agent.llm_latency_ms = None
     agent.error = ""
+    supplied_history = body.get("history", [])
+    if not isinstance(supplied_history, list):
+        raise HTTPException(status_code=400, detail="history must be an array of user/assistant messages")
+    if len(supplied_history) > 500:
+        raise HTTPException(status_code=413, detail="conversation history is too long")
+    agent.conversation_history = []
+    for item in supplied_history:
+        if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
+            continue
+        content = item.get("content")
+        if isinstance(content, str) and content.strip():
+            agent.conversation_history.append({
+                "role": item["role"],
+                "content": content.strip()[:12000],
+            })
+    agent.conversation_history.append({"role": "user", "content": message.strip()})
+    agent.conversation_turns = []
+    agent.active_turn_id = None
+    agent.last_kb_status = "not_checked"
+    agent.last_kb_used = False
+    agent.last_kb_chunks = 0
+    agent.last_kb_agent = agent_type
+    agent.last_kb_titles = []
 
     if llm_provider == "qwen" and not agent.qwen_api_key:
         raise HTTPException(status_code=503, detail="Qwen API authentication is not configured on the backend")
@@ -318,6 +350,12 @@ async def text_chat(request: Request):
         "llm_latency_ms": agent.llm_latency_ms,
         "total_latency_ms": round((time.perf_counter() - started) * 1000, 1),
         "retrieval_enabled": retrieval_enabled,
+        "kb_status": getattr(agent, "last_kb_status", "not_checked"),
+        "kb_used": bool(getattr(agent, "last_kb_used", False)),
+        "kb_chunks": int(getattr(agent, "last_kb_chunks", 0)),
+        "kb_agent": agent_type,
+        "kb_titles": list(getattr(agent, "last_kb_titles", [])),
+        "reasoning_model": "Dhīr 2B" if llm_provider == "qwen" else agent.llm_model,
         "audio_generated": False,
     }
 
@@ -385,6 +423,11 @@ async def voice_socket(websocket: WebSocket):
         "classifier": "bert_tiny_4.4",
         "llm_provider": llm_provider,
         "reasoning_model": (
+            "Dhīr 2B"
+            if llm_provider == "qwen"
+            else get_setting("SARVAM_LLM_MODEL", "sarvam-105b-conversations")
+        ),
+        "reasoning_model_id": (
             get_setting("AURA_QWEN_MODEL", "aura-qwen3-0.6b")
             if llm_provider == "qwen"
             else get_setting("SARVAM_LLM_MODEL", "sarvam-105b-conversations")
