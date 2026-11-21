@@ -71,7 +71,7 @@ export class AuraVoiceClient {
     this.stopped = false;
     const secure = window.location.protocol === 'https:';
     const configured = import.meta.env.VITE_AURA_WS_URL as string | undefined;
-    const baseUrl = configured || `${secure ? 'wss' : 'ws'}://${window.location.host}/ws/voice`;
+    const baseUrl = configured || "wss://aura-api-gateway.abhinavnautiyal96.workers.dev/ws/voice";
     const separator = baseUrl.includes("?") ? "&" : "?";
     const wsUrl = `${baseUrl}${separator}agent=${encodeURIComponent(this.agent)}&llm_provider=${encodeURIComponent(this.llmProvider)}`;
     this.options.onStatus('Connecting to AURA backend…');
