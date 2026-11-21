@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, ChevronRight, Database, FileSearch, FileText, Layers3, LoaderCircle, Network, RefreshCw, Scissors, ShieldCheck, ToggleLeft, ToggleRight } from 'lucide-react';
 
-const API_BASE = ((import.meta.env.VITE_AURA_API_BASE_URL as string | undefined) || '').replace(/\/$/, '');
+const API_BASE = ((import.meta.env.VITE_AURA_API_BASE_URL as string | undefined) || "https://aura-api-gateway.abhinavnautiyal96.workers.dev").replace(/\/$/, "");
 
 type KBStatus = { enabled: boolean; documents: number; chunks: number; embedding_model: string; dimensions: number };
 type Document = { id: string; title: string; source: string; created_at: string; chunk_count: number };
