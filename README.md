@@ -1,5 +1,7 @@
 # AURA — Self-Hosted Multilingual Voice AI
 
+<img width="1892" height="871" alt="image" src="https://github.com/user-attachments/assets/ab2c9f81-83b8-4644-accf-e3af7e75e65e" />
+
 <p align="center">
   <strong>A real-time voice AI playground combining multilingual speech, model serving, and agent-specific retrieval.</strong>
 </p>
